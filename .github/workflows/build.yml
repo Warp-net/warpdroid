@@ -34,7 +34,21 @@ jobs:
         id: assemble
         run: |
           set -o pipefail
-          ./gradlew :app:assembleDebug --stacktrace 2>&1 | tee assemble.log
+          attempt=1
+          max=3
+          while :; do
+            if ./gradlew :app:assembleDebug --stacktrace 2>&1 | tee assemble.log; then
+              exit 0
+            fi
+            # Retry only for transient network/CDN hiccups while the Gradle
+            # wrapper fetches its distribution from GitHub Releases.
+            if [ $attempt -ge $max ] || ! grep -qE "HTTP response code: (5|429)|ConnectException|UnknownHostException" assemble.log; then
+              exit 1
+            fi
+            echo "Attempt $attempt failed on a transient download; retrying." >&2
+            attempt=$((attempt + 1))
+            sleep $((attempt * 10))
+          done
 
       - name: Run unit tests
         id: unit_tests
