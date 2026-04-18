@@ -24,9 +24,6 @@ import android.util.Log
 import androidx.core.content.edit
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
@@ -39,13 +36,11 @@ import com.keylesspalace.tusky.settings.SCHEMA_VERSION
 import com.keylesspalace.tusky.util.AnimatedPngDecoder
 import com.keylesspalace.tusky.util.LocaleManager
 import com.keylesspalace.tusky.util.setAppNightMode
-import com.keylesspalace.tusky.worker.PruneCacheWorker
 import dagger.hilt.android.HiltAndroidApp
 import de.c1710.filemojicompat_defaults.DefaultEmojiPackList
 import de.c1710.filemojicompat_ui.helpers.EmojiPackHelper
 import de.c1710.filemojicompat_ui.helpers.EmojiPreference
 import java.security.Security
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import okhttp3.OkHttpClient
 import org.conscrypt.Conscrypt
@@ -124,15 +119,7 @@ class TuskyApplication :
 
         localeManager.setLocale()
 
-        // Prune the database every ~ 12 hours when the device is idle.
-        val pruneCacheWorker = PeriodicWorkRequestBuilder<PruneCacheWorker>(12, TimeUnit.HOURS)
-            .setConstraints(Constraints.Builder().setRequiresDeviceIdle(true).build())
-            .build()
-        workManager.enqueueUniquePeriodicWork(
-            PruneCacheWorker.PERIODIC_WORK_TAG,
-            ExistingPeriodicWorkPolicy.KEEP,
-            pruneCacheWorker
-        )
+        // Warpdroid: no local cache to prune — PruneCacheWorker removed with Room.
     }
 
     override val workManagerConfiguration: Configuration

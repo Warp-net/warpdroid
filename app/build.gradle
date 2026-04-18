@@ -150,9 +150,12 @@ android {
         includeInBundle false
     }
     applicationVariants.configureEach { variant ->
-        variant.outputs.configureEach {
+        variant.outputs.configureEach { output ->
+            // Splits produce one APK per ABI per variant; include the ABI filter
+            // in the name so the four outputs don't collide on the same path.
+            def abi = output.getFilter(com.android.build.OutputFile.ABI) ?: "universal"
             outputFileName = "Warpdroid_${variant.versionName}_${variant.versionCode}_${gitSha}_" +
-                "${variant.flavorName}_${buildType.name}.apk"
+                "${variant.flavorName}_${buildType.name}_${abi}.apk"
         }
     }
 
@@ -211,9 +214,6 @@ dependencies {
     implementation libs.androidx.hilt.work
     ksp libs.androidx.hilt.compiler
 
-    implementation libs.bundles.room
-    ksp libs.androidx.room.compiler
-
     implementation libs.sparkbutton.compose
 
     implementation libs.touchimageview
@@ -231,7 +231,7 @@ dependencies {
     implementation(libs.ktxml)
 }
 
-// Retrofit, OkHttp, and Room are still listed in libs.versions.toml for now;
+// Retrofit and OkHttp are still listed in libs.versions.toml for now;
 // they will be removed in a follow-up commit once the Warpnet transport has
 // fully replaced their call sites. Leaving them as unused `libs.*` aliases
 // does not bloat the APK (unreferenced aliases are not resolved).

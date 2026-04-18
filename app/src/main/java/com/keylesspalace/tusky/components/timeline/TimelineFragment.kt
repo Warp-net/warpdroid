@@ -85,7 +85,6 @@ import com.keylesspalace.tusky.appstore.StatusComposedEvent
 import com.keylesspalace.tusky.components.compose.ComposeActivity
 import com.keylesspalace.tusky.components.instanceinfo.InstanceInfoRepository
 import com.keylesspalace.tusky.components.preference.PreferencesFragment.ReadingOrder
-import com.keylesspalace.tusky.components.timeline.viewmodel.CachedTimelineViewModel
 import com.keylesspalace.tusky.components.timeline.viewmodel.NetworkTimelineViewModel
 import com.keylesspalace.tusky.components.timeline.viewmodel.TimelineViewModel
 import com.keylesspalace.tusky.db.AccountManager
@@ -150,16 +149,12 @@ class TimelineFragment :
     lateinit var instanceInfoRepository: InstanceInfoRepository
 
     private val viewModel: TimelineViewModel by unsafeLazy {
-        val viewModelProvider = ViewModelProvider(
+        // Warpdroid: no local timeline cache — always use the network-backed VM.
+        ViewModelProvider(
             viewModelStore,
             defaultViewModelProviderFactory,
             defaultViewModelCreationExtras
-        )
-        if (kind == TimelineViewModel.Kind.HOME) {
-            viewModelProvider[CachedTimelineViewModel::class.java]
-        } else {
-            viewModelProvider[NetworkTimelineViewModel::class.java]
-        }
+        )[NetworkTimelineViewModel::class.java]
     }
 
     private lateinit var kind: TimelineViewModel.Kind

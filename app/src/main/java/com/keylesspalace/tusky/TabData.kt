@@ -3,10 +3,10 @@
  * Copyright (C) 2026 Warpdroid contributors.
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Originally part of Tusky. Warpdroid only ships two tabs — Home (aggregated
- * timeline from the paired desktop node) and Notifications. Local, federated,
- * trending, direct-message, hashtag, list, and bookmark tabs have no Warpnet
- * equivalent and are removed.
+ * Originally part of Tusky. Warpdroid only ships the Home tab — the aggregated
+ * timeline from the paired desktop node. Local, federated, trending,
+ * direct-message, hashtag, list, bookmark and notifications tabs have no
+ * Warpnet equivalent and are removed.
  */
 package com.keylesspalace.tusky
 
@@ -14,13 +14,11 @@ import android.content.Context
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.fragment.app.Fragment
-import com.keylesspalace.tusky.components.notifications.NotificationsFragment
 import com.keylesspalace.tusky.components.timeline.TimelineFragment
 import com.keylesspalace.tusky.components.timeline.viewmodel.TimelineViewModel
 import java.util.Objects
 
 const val HOME = "Home"
-const val NOTIFICATIONS = "Notifications"
 
 data class TabData(
     val id: String,
@@ -50,16 +48,9 @@ fun createTabDataFromId(id: String, arguments: List<String> = emptyList()): TabD
         icon = R.drawable.tab_icon_home,
         fragment = { TimelineFragment.newInstance(TimelineViewModel.Kind.HOME) },
     )
-    NOTIFICATIONS -> TabData(
-        id = NOTIFICATIONS,
-        text = R.string.title_notifications,
-        icon = R.drawable.tab_icon_notifications,
-        fragment = { NotificationsFragment.newInstance() },
-    )
     else -> throw IllegalArgumentException("unknown tab type: $id")
 }
 
 fun defaultTabs(): List<TabData> = listOf(
     createTabDataFromId(HOME),
-    createTabDataFromId(NOTIFICATIONS),
 )

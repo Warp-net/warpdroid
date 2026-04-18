@@ -60,9 +60,9 @@ object WarpnetModule {
         WarpnetTransport.createClient(moshi)
 
     // Kept for call-site compatibility: the deleted NetworkModule used to
-    // provide this for TuskyApplication, PlayerModule and DraftHelper. Media
-    // playback and draft uploads aren't wired to Warpnet yet, so a vanilla
-    // client with no interceptors is enough to keep the Hilt graph complete.
+    // provide this for TuskyApplication and PlayerModule. Media playback
+    // isn't wired to Warpnet yet, so a vanilla client with no interceptors
+    // is enough to keep the Hilt graph complete.
     @Provides
     @Singleton
     fun providesOkHttpClient(): OkHttpClient = OkHttpClient.Builder().build()

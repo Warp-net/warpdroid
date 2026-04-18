@@ -71,14 +71,12 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayout.OnTabSelectedListener
 import com.google.android.material.tabs.TabLayoutMediator
-import com.keylesspalace.tusky.appstore.CacheUpdater
 import com.keylesspalace.tusky.appstore.EventHub
 import com.keylesspalace.tusky.components.account.AccountActivity
 import com.keylesspalace.tusky.components.accountlist.AccountListActivity
 import com.keylesspalace.tusky.components.announcements.AnnouncementsActivity
 import com.keylesspalace.tusky.components.compose.ComposeActivity
 import com.keylesspalace.tusky.components.compose.ComposeActivity.Companion.canHandleMimeType
-import com.keylesspalace.tusky.components.drafts.DraftsActivity
 import com.keylesspalace.tusky.components.preference.PreferencesActivity
 import com.keylesspalace.tusky.components.scheduled.ScheduledStatusActivity
 import com.keylesspalace.tusky.components.search.SearchActivity
@@ -93,7 +91,6 @@ import com.keylesspalace.tusky.interfaces.ActionButtonActivity
 import com.keylesspalace.tusky.interfaces.ReselectableFragment
 import com.keylesspalace.tusky.pager.MainPagerAdapter
 import com.keylesspalace.tusky.settings.PrefKeys
-import com.keylesspalace.tusky.usecase.DeveloperToolsUseCase
 import com.keylesspalace.tusky.usecase.LogoutUsecase
 import com.keylesspalace.tusky.util.emojify
 import com.keylesspalace.tusky.util.getParcelableExtraCompat
@@ -142,16 +139,10 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
     lateinit var notificationHelper: NotificationHelper
 
     @Inject
-    lateinit var cacheUpdater: CacheUpdater
-
-    @Inject
     lateinit var logoutUsecase: LogoutUsecase
 
     @Inject
     lateinit var draftsAlert: DraftsAlert
-
-    @Inject
-    lateinit var developerToolsUseCase: DeveloperToolsUseCase
 
     @Inject
     lateinit var warpnetClient: WarpnetClient
@@ -216,11 +207,9 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
             viewModel.setupNotifications(this)
         }
 
-        var showNotificationTab = false
-
         // check for savedInstanceState in order to not handle intent events more than once
         if (intent != null && savedInstanceState == null) {
-            showNotificationTab = handleIntent(intent, activeAccount)
+            handleIntent(intent, activeAccount)
             if (isFinishing) {
                 // handleIntent() finished this activity and started a new one - no need to continue initialization
                 return
@@ -329,12 +318,7 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
         lifecycleScope.launch {
             viewModel.tabs.collect(::setupTabs)
         }
-        if (showNotificationTab) {
-            val position = viewModel.tabs.value.indexOfFirst { it.id == NOTIFICATIONS }
-            if (position != -1) {
-                binding.viewPager.setCurrentItem(position, false)
-            }
-        }
+        // Warpdroid: no Notifications tab to switch to.
 
         lifecycleScope.launch {
             viewModel.showDirectMessagesBadge.collect { showBadge ->
@@ -375,18 +359,11 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val showNotificationTab = handleIntent(intent, activeAccount)
-        if (showNotificationTab) {
-            val tabs = activeAccount.tabPreferences
-            val position = tabs.indexOfFirst { it.id == NOTIFICATIONS }
-            if (position != -1) {
-                binding.viewPager.setCurrentItem(position, false)
-            }
-        }
+        // Warpdroid: no Notifications tab; ignore the "show notifications" hint.
+        handleIntent(intent, activeAccount)
     }
 
     override fun onDestroy() {
-        cacheUpdater.stop()
         super.onDestroy()
     }
 
@@ -420,8 +397,6 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
             return false
         }
 
-        val openDrafts = intent.getBooleanExtra(OPEN_DRAFTS, false)
-
         if (canHandleMimeType(intent.type) || intent.hasExtra(COMPOSE_OPTIONS)) {
             // Sharing to Tusky from an external app
             if (accountRequested) {
@@ -447,9 +422,6 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
                     }
                 )
             }
-        } else if (openDrafts) {
-            val draftsIntent = DraftsActivity.newIntent(this)
-            startActivity(draftsIntent)
         } else if (accountRequested && intent.hasExtra(NOTIFICATION_TYPE)) {
             // user clicked a notification, show follow requests for type FOLLOW_REQUEST,
             // otherwise show notification tab
@@ -705,14 +677,6 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
                     }
                 },
                 primaryDrawerItem {
-                    nameRes = R.string.action_access_drafts
-                    iconRes = R.drawable.ic_edit_document_24dp
-                    onClick = {
-                        val intent = DraftsActivity.newIntent(context)
-                        startActivityWithSlideInAnimation(intent)
-                    }
-                },
-                primaryDrawerItem {
                     nameRes = R.string.action_access_scheduled_posts
                     iconRes = R.drawable.ic_schedule_24dp
                     onClick = {
@@ -803,43 +767,7 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
             }
         }
 
-        if (BuildConfig.DEBUG) {
-            // Add a "Developer tools" entry. Code that makes it easier to
-            // set the app state at runtime belongs here, it will never
-            // be exposed to users.
-            binding.mainDrawer.addItems(
-                DividerDrawerItem(),
-                secondaryDrawerItem {
-                    nameText = "Developer tools"
-                    isEnabled = true
-                    iconRes = R.drawable.ic_developer_mode_24dp
-                    onClick = {
-                        showDeveloperToolsDialog()
-                    }
-                }
-            )
-        }
-    }
-
-    private fun showDeveloperToolsDialog(): AlertDialog {
-        return MaterialAlertDialogBuilder(this)
-            .setTitle("Developer Tools")
-            .setItems(
-                arrayOf("Create \"Load more\" gap")
-            ) { _, which ->
-                Log.d(TAG, "Developer tools: $which")
-                when (which) {
-                    0 -> {
-                        Log.d(TAG, "Creating \"Load more\" gap")
-                        lifecycleScope.launch {
-                            developerToolsUseCase.createLoadMoreGap(
-                                activeAccount.id
-                            )
-                        }
-                    }
-                }
-            }
-            .show()
+        // Warpdroid: developer tools relied on the removed local timeline cache.
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -940,7 +868,6 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
         newSelectedId: Long,
         forward: Intent?,
     ) = lifecycleScope.launch {
-        cacheUpdater.stop()
         accountManager.setActiveAccount(newSelectedId)
         val intent = Intent(this@MainActivity, MainActivity::class.java)
         if (forward != null) {

@@ -25,7 +25,6 @@ import androidx.lifecycle.viewModelScope
 import at.connyduck.calladapter.networkresult.fold
 import com.keylesspalace.tusky.components.compose.ComposeActivity.ComposeKind
 import com.keylesspalace.tusky.components.compose.ComposeAutoCompleteAdapter.AutocompleteResult
-import com.keylesspalace.tusky.components.drafts.DraftHelper
 import com.keylesspalace.tusky.components.instanceinfo.InstanceInfo
 import com.keylesspalace.tusky.components.instanceinfo.InstanceInfoRepository
 import com.keylesspalace.tusky.components.search.SearchType
@@ -68,7 +67,6 @@ class ComposeViewModel @AssistedInject constructor(
     private val accountManager: AccountManager,
     private val mediaUploader: MediaUploader,
     private val serviceClient: ServiceClient,
-    private val draftHelper: DraftHelper,
     private val state: SavedStateHandle,
     @Assisted("options") private val composeOptions: ComposeActivity.ComposeOptions?,
     instanceInfoRepo: InstanceInfoRepository
@@ -168,22 +166,15 @@ class ComposeViewModel @AssistedInject constructor(
                 }
             }
         } else {
-            val draftAttachments = composeOptions?.draftAttachments
-            if (draftAttachments != null) {
-                // when coming from DraftActivity
-                draftAttachments.map { attachment ->
-                    MediaData(attachment.uri, attachment.description, attachment.focus)
-                }.let(::pickMedia)
-            } else {
-                composeOptions?.mediaAttachments?.forEach { a ->
-                    // when coming from redraft or ScheduledTootActivity
-                    val mediaType = when (a.type) {
-                        Attachment.Type.VIDEO, Attachment.Type.GIFV -> QueuedMedia.Type.VIDEO
-                        Attachment.Type.UNKNOWN, Attachment.Type.IMAGE -> QueuedMedia.Type.IMAGE
-                        Attachment.Type.AUDIO -> QueuedMedia.Type.AUDIO
-                    }
-                    addUploadedMedia(a.id, mediaType, a.url.toUri(), a.description, a.meta?.focus)
+            // Warpdroid: drafts aren't persisted, so there are no draft attachments to restore.
+            composeOptions?.mediaAttachments?.forEach { a ->
+                // when coming from redraft or ScheduledTootActivity
+                val mediaType = when (a.type) {
+                    Attachment.Type.VIDEO, Attachment.Type.GIFV -> QueuedMedia.Type.VIDEO
+                    Attachment.Type.UNKNOWN, Attachment.Type.IMAGE -> QueuedMedia.Type.IMAGE
+                    Attachment.Type.AUDIO -> QueuedMedia.Type.AUDIO
                 }
+                addUploadedMedia(a.id, mediaType, a.url.toUri(), a.description, a.meta?.focus)
             }
         }
 
@@ -411,45 +402,16 @@ class ComposeViewModel @AssistedInject constructor(
     }
 
     fun deleteDraft() {
-        composeOptions?.draftId?.let { draftId ->
-            viewModelScope.launch {
-                draftHelper.deleteDraftAndAttachments(draftId)
-            }
-        }
+        // TODO(warpdroid): drafts are not persisted; nothing to delete.
     }
 
     fun stopUploads() {
         mediaUploader.cancelUploadScope(*_media.value.map { it.localId }.toIntArray())
     }
 
+    @Suppress("UNUSED_PARAMETER")
     suspend fun saveDraft(content: String, contentWarning: String) {
-        val mediaUris: MutableList<String> = mutableListOf()
-        val mediaDescriptions: MutableList<String?> = mutableListOf()
-        val mediaFocus: MutableList<Attachment.Focus?> = mutableListOf()
-        for (item in _media.value) {
-            mediaUris.add(item.uri.toString())
-            mediaDescriptions.add(item.description)
-            mediaFocus.add(item.focus)
-        }
-
-        draftHelper.saveDraft(
-            draftId = composeOptions?.draftId ?: 0,
-            accountId = accountManager.activeAccount?.id!!,
-            inReplyToId = inReplyToId,
-            content = content,
-            contentWarning = contentWarning,
-            sensitive = _markMediaAsSensitive.value,
-            visibility = _statusVisibility.value,
-            mediaUris = mediaUris,
-            mediaDescriptions = mediaDescriptions,
-            mediaFocus = mediaFocus,
-            poll = _poll.value,
-            failedToSend = false,
-            failedToSendAlert = false,
-            scheduledAt = _scheduledAt.value,
-            language = postLanguage,
-            statusId = composeOptions?.statusId
-        )
+        // TODO(warpdroid): drafts persistence was removed with Room; no-op.
     }
 
     /**

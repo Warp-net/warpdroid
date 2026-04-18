@@ -22,7 +22,6 @@ import at.connyduck.calladapter.networkresult.fold
 import at.connyduck.calladapter.networkresult.getOrElse
 import at.connyduck.calladapter.networkresult.map
 import at.connyduck.calladapter.networkresult.onFailure
-import at.connyduck.calladapter.networkresult.onSuccess
 import com.keylesspalace.tusky.R
 import com.keylesspalace.tusky.appstore.BlockEvent
 import com.keylesspalace.tusky.appstore.EventHub
@@ -30,16 +29,13 @@ import com.keylesspalace.tusky.appstore.PollVoteEvent
 import com.keylesspalace.tusky.appstore.StatusChangedEvent
 import com.keylesspalace.tusky.appstore.StatusComposedEvent
 import com.keylesspalace.tusky.appstore.StatusDeletedEvent
-import com.keylesspalace.tusky.components.timeline.toStatus
 import com.keylesspalace.tusky.db.AccountManager
-import com.keylesspalace.tusky.db.AppDatabase
 import com.keylesspalace.tusky.entity.Filter
 import com.keylesspalace.tusky.entity.Poll
 import com.keylesspalace.tusky.entity.Status
 import com.keylesspalace.tusky.network.MastodonApi
 import com.keylesspalace.tusky.ui.SnackbarError
 import com.keylesspalace.tusky.util.toViewData
-import com.keylesspalace.tusky.viewdata.QuoteViewData
 import com.keylesspalace.tusky.viewdata.StatusViewData
 import com.keylesspalace.tusky.viewdata.TranslationViewData
 import com.keylesspalace.tusky.viewmodel.StatusActionsViewModel
@@ -61,7 +57,6 @@ import kotlinx.coroutines.launch
 @HiltViewModel(assistedFactory = ViewThreadViewModel.Factory::class)
 class ViewThreadViewModel @AssistedInject constructor(
     private val api: MastodonApi,
-    private val db: AppDatabase,
     private val eventHub: EventHub,
     accountManager: AccountManager,
     @Assisted("threadId") val threadId: String
@@ -120,62 +115,13 @@ class ViewThreadViewModel @AssistedInject constructor(
         viewModelScope.launch {
             val contextCall = async { api.statusContext(threadId) }
 
-            val cachedStatusData = db.timelineStatusDao().getFullStatus(activeAccount.id, threadId)
-
-            var detailedStatus = if (cachedStatusData != null) {
-                Log.d(TAG, "Loaded status from local timeline")
-                val status = cachedStatusData.status.toStatus(
-                    account = cachedStatusData.account,
-                    quotedStatus = cachedStatusData.quotedStatus,
-                    quotedStatusAccount = cachedStatusData.quotedStatusAccount
-                )
-                StatusViewData.Concrete(
-                    status = status,
-                    isExpanded = cachedStatusData.status.expanded,
-                    isShowingContent = cachedStatusData.status.contentShowing,
-                    isCollapsed = cachedStatusData.status.contentCollapsed,
-                    isDetailed = true,
-                    // don't show "in reply to" over the post
-                    repliedToAccount = null,
-                    translation = null,
-                    filterActive = true,
-                    quote = status.quote?.let { quote ->
-                        QuoteViewData(
-                            state = quote.state,
-                            quotedStatusViewData = if (cachedStatusData.quotedStatus != null && quote.quotedStatus != null) {
-                                StatusViewData.Concrete(
-                                    status = quote.quotedStatus,
-                                    isExpanded = cachedStatusData.quotedStatus.expanded,
-                                    isShowingContent = cachedStatusData.quotedStatus.contentShowing,
-                                    isCollapsed = cachedStatusData.quotedStatus.contentCollapsed,
-                                    isDetailed = false,
-                                    repliedToAccount = null,
-                                    translation = null,
-                                    filter = quote.quotedStatus.getApplicableFilter(Filter.Kind.HOME),
-                                    filterActive = cachedStatusData.quotedStatus.filterActive,
-                                    quote = cachedStatusData.quotedStatus.quoteState?.let { quoteState ->
-                                        QuoteViewData(
-                                            state = quoteState,
-                                            quotedStatusViewData = null,
-                                            quoteShown = cachedStatusData.quotedStatus.quoteShown
-                                        )
-                                    }
-                                )
-                            } else {
-                                null
-                            },
-                            quoteShown = cachedStatusData.status.quoteShown
-                        )
-                    }
-                )
-            } else {
-                Log.d(TAG, "Loaded status from network")
-                val result = api.status(threadId).getOrElse { exception ->
-                    _uiState.value = ThreadUiState.Error(exception)
-                    return@launch
-                }
-                result.toViewData(isDetailed = true)
+            // Warpdroid: no local timeline cache — always load detailed status from network.
+            Log.d(TAG, "Loaded status from network")
+            val result = api.status(threadId).getOrElse { exception ->
+                _uiState.value = ThreadUiState.Error(exception)
+                return@launch
             }
+            val detailedStatus = result.toViewData(isDetailed = true)
 
             _uiState.update { uiState ->
                 if (uiState is ThreadUiState.Success) {
@@ -191,16 +137,6 @@ class ViewThreadViewModel @AssistedInject constructor(
                         isRefreshing = false,
                         isloadingThread = true
                     )
-                }
-            }
-
-            // If the detailedStatus was loaded from the database it might be out-of-date
-            // compared to the remote one. Now the user has a working UI do a background fetch
-            // for the status. Ignore errors, the user still has a functioning UI if the fetch
-            // failed
-            if (cachedStatusData != null) {
-                api.status(threadId).onSuccess { result ->
-                    detailedStatus = result.toViewData(isDetailed = true)
                 }
             }
 

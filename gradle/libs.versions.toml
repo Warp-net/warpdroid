@@ -24,7 +24,6 @@ androidx-swiperefresh-layout = "1.1.0"
 androidx-testing = "2.2.0"
 androidx-viewpager2 = "1.1.0"
 androidx-work = "2.11.2"
-androidx-room = "2.7.2"
 coil = "3.3.0"
 conscrypt = "2.5.3"
 coroutines = "1.10.2"
@@ -99,10 +98,6 @@ androidx-paging-compose = { group = "androidx.paging", name = "paging-compose", 
 androidx-paging-runtime-ktx = { group = "androidx.paging", name = "paging-runtime-ktx", version.ref = "androidx-paging" }
 androidx-paging-test = { group = "androidx.paging", name = "paging-testing", version.ref = "androidx-paging" }
 androidx-preference-ktx = { module = "androidx.preference:preference-ktx", version.ref = "androidx-preference" }
-androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "androidx-room" }
-androidx-room-paging = { module = "androidx.room:room-paging", version.ref = "androidx-room" }
-androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "androidx-room" }
-androidx-room-testing = { module = "androidx.room:room-testing", version.ref = "androidx-room" }
 androidx-recyclerview = { module = "androidx.recyclerview:recyclerview", version.ref = "androidx-recyclerview" }
 androidx-sharetarget = { module = "androidx.sharetarget:sharetarget", version.ref = "androidx-sharetarget" }
 androidx-swiperefreshlayout = { module = "androidx.swiperefreshlayout:swiperefreshlayout", version.ref = "androidx-swiperefresh-layout" }
@@ -167,6 +162,5 @@ mockito = ["mockito-kotlin", "mockito-inline"]
 moshi = ["moshi-core", "moshi-adapters"]
 okhttp = ["okhttp-core", "okhttp-logging-interceptor"]
 retrofit = ["retrofit-core", "retrofit-converter-moshi"]
-room = ["androidx-room-ktx", "androidx-room-paging"]
 xmldiff = ["diffx", "xmlwriter"]
 unifiedpush = ["unified-push-connector", "unified-push-connector-ui"]
