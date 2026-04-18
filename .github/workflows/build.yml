@@ -61,7 +61,7 @@ jobs:
         id: unit_tests
         run: |
           set -o pipefail
-          ./gradlew :warpnet-transport:testDebugUnitTest :app:testDebugUnitTest --stacktrace 2>&1 | tee unit-tests.log
+          ./gradlew :warpnet-transport:testDebugUnitTest :app:testBlueDebugUnitTest :app:testGreenDebugUnitTest --stacktrace 2>&1 | tee unit-tests.log
 
       - name: Post build failure as PR comment
         if: failure() && github.event_name == 'pull_request'
