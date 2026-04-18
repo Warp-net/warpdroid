@@ -20,6 +20,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import java.util.Date
 import javax.inject.Singleton
+import okhttp3.OkHttpClient
 import site.warpnet.transport.WarpnetClient
 import site.warpnet.transport.WarpnetTransport
 
@@ -57,4 +58,12 @@ object WarpnetModule {
     @Singleton
     fun providesWarpnetClient(moshi: Moshi): WarpnetClient =
         WarpnetTransport.createClient(moshi)
+
+    // Kept for call-site compatibility: the deleted NetworkModule used to
+    // provide this for TuskyApplication, PlayerModule and DraftHelper. Media
+    // playback and draft uploads aren't wired to Warpnet yet, so a vanilla
+    // client with no interceptors is enough to keep the Hilt graph complete.
+    @Provides
+    @Singleton
+    fun providesOkHttpClient(): OkHttpClient = OkHttpClient.Builder().build()
 }
