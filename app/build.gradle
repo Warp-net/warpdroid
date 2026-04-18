@@ -16,22 +16,29 @@ apply from: 'getGitSha.gradle'
 final def gitSha = ext.getGitSha()
 
 // The app name
-final def APP_NAME = "Tusky"
-// The application id. Must be unique, e.g. based on your domain
-final def APP_ID = "com.keylesspalace.tusky"
-// url of a custom app logo. Recommended size at least 600x600. Keep empty to use the Tusky elephant friend.
+final def APP_NAME = "Warpdroid"
+// The application id. Must be unique, e.g. based on your domain.
+// Warpdroid is a Warpnet Android client forked from Tusky; keep distinct from
+// upstream Tusky so both can be installed side by side on a user device.
+final def APP_ID = "site.warpnet.warpdroid"
+// Internal Gradle/AGP namespace. Tusky source still lives under
+// com.keylesspalace.tusky to minimise churn; namespace drives the R and
+// BuildConfig packages only.
+final def APP_NAMESPACE = "com.keylesspalace.tusky"
+// url of a custom app logo. Recommended size at least 600x600.
 final def CUSTOM_LOGO_URL = ""
-// e.g. mastodon.social. Keep empty to not suggest any instance on the signup screen
+// Unused in Warpdroid (no Mastodon instance picker). Kept to satisfy existing
+// BuildConfig references during the strip-down.
 final def CUSTOM_INSTANCE = ""
-// link to your support account. Will be linked on the about page when not empty.
-final def SUPPORT_ACCOUNT_URL = "https://mastodon.social/@Tusky"
+// Link shown on the About screen.
+final def SUPPORT_ACCOUNT_URL = "https://github.com/Warp-net/warpdroid"
 
 android {
     compileSdk = 36
-    namespace = "com.keylesspalace.tusky"
+    namespace = APP_NAMESPACE
     defaultConfig {
         applicationId = APP_ID
-        namespace = "com.keylesspalace.tusky"
+        namespace = APP_NAMESPACE
         minSdk = 24
         targetSdk = 36
         versionCode = 142
@@ -143,13 +150,24 @@ android {
             enableSplit = false
         }
     }
+
+    // Warpnet ships a Go runtime (via gomobile) for libp2p. Keep only the
+    // ABIs realistic phones actually use so the APK doesn't grow needlessly.
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a'
+            universalApk false
+        }
+    }
     dependenciesInfo {
         includeInApk false
         includeInBundle false
     }
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach {
-            outputFileName = "Tusky_${variant.versionName}_${variant.versionCode}_${gitSha}_" +
+            outputFileName = "Warpdroid_${variant.versionName}_${variant.versionCode}_${gitSha}_" +
                 "${variant.flavorName}_${buildType.name}.apk"
         }
     }
@@ -184,8 +202,82 @@ configurations {
     testRuntime.exclude group: "org.conscrypt", module: "conscrypt-android"
 }
 
+// --- Warpnet native binding ---
+//
+// The Warpnet libp2p thin-client lives in the Go module at
+//   https://github.com/Warp-net/android-binding
+// and is packaged as `warpnet.aar` via `gomobile bind`. We vendor the pre-built
+// AAR in `app/libs/` so the Gradle build doesn't depend on having a Go
+// toolchain installed. The `buildWarpnetAar` task below rebuilds it from a
+// sibling checkout of `android-binding` for developers working on the
+// transport layer; CI (and F-Droid's reproducible-build config, Phase 6)
+// should run this task before assembling.
+//
+// The AAR is pinned by SHA-256 in `app/libs/warpnet.aar.sha256`. The
+// `verifyWarpnetAarChecksum` task enforces the pin so a silent swap of the
+// binary fails the build.
+
+ext {
+    warpnetAarFile = file("libs/warpnet.aar")
+    warpnetAarChecksumFile = file("libs/warpnet.aar.sha256")
+    warpnetBindingDir = providers
+        .environmentVariable("WARPNET_ANDROID_BINDING_DIR")
+        .orElse(file("${rootDir}/../android-binding").absolutePath)
+        .get()
+}
+
+tasks.register("buildWarpnetAar", Exec) {
+    group = "warpnet"
+    description = "Rebuilds warpnet.aar from a sibling android-binding checkout via gomobile."
+    def bindingDir = file(warpnetBindingDir)
+    workingDir = bindingDir
+    commandLine "bash", "build-native.sh"
+    doFirst {
+        if (!bindingDir.exists()) {
+            throw new GradleException(
+                "Warpnet binding source not found at ${bindingDir}. Clone " +
+                "https://github.com/Warp-net/android-binding next to this repo " +
+                "or set WARPNET_ANDROID_BINDING_DIR."
+            )
+        }
+    }
+    doLast {
+        copy {
+            from bindingDir
+            include "warpnet.aar", "warpnet-sources.jar"
+            into warpnetAarFile.parentFile
+        }
+    }
+}
+
+tasks.register("verifyWarpnetAarChecksum") {
+    group = "warpnet"
+    description = "Fails the build if app/libs/warpnet.aar drifts from the pinned SHA-256."
+    doLast {
+        if (!warpnetAarFile.exists()) {
+            throw new GradleException("Missing ${warpnetAarFile}. Run :app:buildWarpnetAar.")
+        }
+        def expected = warpnetAarChecksumFile.text.trim().split(/\s+/)[0]
+        def actual = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(warpnetAarFile.bytes)
+            .collect { String.format('%02x', it) }
+            .join('')
+        if (expected != actual) {
+            throw new GradleException(
+                "warpnet.aar checksum mismatch.\n  expected: ${expected}\n  actual:   ${actual}\n" +
+                "Either restore the pinned binary, or intentionally update " +
+                "app/libs/warpnet.aar.sha256 after reviewing the new AAR."
+            )
+        }
+    }
+}
+
+tasks.named("preBuild") { dependsOn "verifyWarpnetAarChecksum" }
+
 // library versions are in PROJECT_ROOT/gradle/libs.versions.toml
 dependencies {
+    implementation files("libs/warpnet.aar")
+
     implementation libs.kotlinx.coroutines.android
 
     implementation libs.bundles.androidx
