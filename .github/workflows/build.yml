@@ -22,18 +22,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Diagnose warpnet.aar
-        run: |
-          ls -la warpnet-transport/libs/ || true
-          echo "--- expected checksum:"
-          cat warpnet-transport/libs/warpnet.aar.sha256 || true
-          echo "--- actual sha256:"
-          sha256sum warpnet-transport/libs/warpnet.aar || true
-          echo "--- first 4 bytes (PK header expected):"
-          head -c 4 warpnet-transport/libs/warpnet.aar | xxd || true
-
       - name: Verify warpnet.aar checksum
-        run: ./gradlew :warpnet-transport:verifyWarpnetAarChecksum --stacktrace --info
+        working-directory: warpnet-transport/libs
+        run: sha256sum -c warpnet.aar.sha256
 
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug --stacktrace

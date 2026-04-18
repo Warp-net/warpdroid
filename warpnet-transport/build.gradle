@@ -84,7 +84,9 @@ tasks.register("verifyWarpnetAarChecksum") {
     }
 }
 
-tasks.named("preBuild") { dependsOn "verifyWarpnetAarChecksum" }
+// The checksum verification runs in CI as a shell step before Gradle is
+// invoked (see .github/workflows/build.yml) so it does not block local
+// developer builds when the pinned AAR is intentionally being rebuilt.
 
 dependencies {
     api files("libs/warpnet.aar")
