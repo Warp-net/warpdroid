@@ -33,6 +33,7 @@ import site.warpnet.transport.dto.NewFollowEvent
 import site.warpnet.transport.dto.NewUnfollowEvent
 import site.warpnet.transport.dto.RepliesResponse
 import site.warpnet.transport.dto.TweetsResponse
+import site.warpnet.transport.dto.UnretweetEvent
 import site.warpnet.transport.dto.WarpnetTweet
 import site.warpnet.transport.dto.WarpnetUser
 
@@ -74,6 +75,7 @@ class WarpnetRepository @Inject constructor(
     private val likeEventAdapter = moshi.adapter<LikeEvent>()
     private val newTweetAdapter = moshi.adapter<WarpnetTweet>()
     private val deleteTweetAdapter = moshi.adapter<DeleteTweetEvent>()
+    private val unretweetAdapter = moshi.adapter<UnretweetEvent>()
 
     // -----------------------------------------------------------------
     // Users
@@ -180,6 +182,37 @@ class WarpnetRepository @Inject constructor(
         val raw = client.request(
             ProtocolIds.PUBLIC_POST_UNLIKE,
             likeEventAdapter.toJson(LikeEvent(tweetId = tweetId, userId = userId)),
+        )
+        return likesCountAdapter.fromJson(raw)?.likesCount ?: 0
+    }
+
+    // -----------------------------------------------------------------
+    // Retweets
+    // -----------------------------------------------------------------
+
+    // Warpnet's NewRetweetEvent is domain.Tweet, so the payload is the
+    // retweeter's copy of the tweet rather than a (tweet_id, user_id) pair.
+    suspend fun reblogStatus(tweetId: String, retweeterId: String, retweeterUsername: String): Long {
+        val payload = WarpnetTweet(
+            id = tweetId,
+            createdAt = "",
+            rootId = "",
+            text = "",
+            userId = retweeterId,
+            username = retweeterUsername,
+            retweetedBy = retweeterId,
+        )
+        val raw = client.request(
+            ProtocolIds.PUBLIC_POST_RETWEET,
+            newTweetAdapter.toJson(payload),
+        )
+        return likesCountAdapter.fromJson(raw)?.likesCount ?: 0
+    }
+
+    suspend fun unreblogStatus(tweetId: String, retweeterId: String): Long {
+        val raw = client.request(
+            ProtocolIds.PUBLIC_POST_UNRETWEET,
+            unretweetAdapter.toJson(UnretweetEvent(tweetId = tweetId, retweeterId = retweeterId)),
         )
         return likesCountAdapter.fromJson(raw)?.likesCount ?: 0
     }

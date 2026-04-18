@@ -349,13 +349,41 @@ class MastodonApi @Inject constructor(
     suspend fun reblogStatus(
         statusId: String,
         visibility: String?,
-    ): NetworkResult<Status> = stubFailure("reblogStatus")
+    ): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("reblogStatus")
+        return result {
+            warpnet.reblogStatus(
+                tweetId = statusId,
+                retweeterId = active.accountId,
+                retweeterUsername = active.username,
+            )
+            warpnet.getStatus(tweetId = statusId, userId = active.accountId)
+        }
+    }
 
-    suspend fun unreblogStatus(statusId: String): NetworkResult<Status> = stubFailure("unreblogStatus")
+    suspend fun unreblogStatus(statusId: String): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("unreblogStatus")
+        return result {
+            warpnet.unreblogStatus(tweetId = statusId, retweeterId = active.accountId)
+            warpnet.getStatus(tweetId = statusId, userId = active.accountId)
+        }
+    }
 
-    suspend fun favouriteStatus(statusId: String): NetworkResult<Status> = stubFailure("favouriteStatus")
+    suspend fun favouriteStatus(statusId: String): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("favouriteStatus")
+        return result {
+            warpnet.favouriteStatus(tweetId = statusId, userId = active.accountId)
+            warpnet.getStatus(tweetId = statusId, userId = active.accountId)
+        }
+    }
 
-    suspend fun unfavouriteStatus(statusId: String): NetworkResult<Status> = stubFailure("unfavouriteStatus")
+    suspend fun unfavouriteStatus(statusId: String): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("unfavouriteStatus")
+        return result {
+            warpnet.unfavouriteStatus(tweetId = statusId, userId = active.accountId)
+            warpnet.getStatus(tweetId = statusId, userId = active.accountId)
+        }
+    }
 
     suspend fun bookmarkStatus(statusId: String): NetworkResult<Status> = stubFailure("bookmarkStatus")
 

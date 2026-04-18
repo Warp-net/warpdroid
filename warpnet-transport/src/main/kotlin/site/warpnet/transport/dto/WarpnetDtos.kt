@@ -119,6 +119,12 @@ data class DeleteTweetEvent(
 )
 
 @JsonClass(generateAdapter = true)
+data class UnretweetEvent(
+    @Json(name = "tweet_id") val tweetId: String,
+    @Json(name = "retweeter_id") val retweeterId: String,
+)
+
+@JsonClass(generateAdapter = true)
 data class GetNotificationsEvent(
     @Json(name = "user_id") val userId: String,
     val cursor: String = "",
