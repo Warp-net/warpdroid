@@ -342,7 +342,11 @@ class MastodonApi @Inject constructor(
     suspend fun accountVerifyCredentials(
         domain: String? = null,
         auth: String? = null,
-    ): NetworkResult<Account> = stubFailure("accountVerifyCredentials")
+    ): NetworkResult<Account> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubFailure("accountVerifyCredentials")
+        return result { warpnet.getAccount(userId) }
+    }
 
     suspend fun accountUpdateSource(
         privacy: String?,
@@ -367,7 +371,9 @@ class MastodonApi @Inject constructor(
         following: Boolean? = null,
     ): NetworkResult<List<TimelineAccount>> = NetworkResult.success(emptyList())
 
-    suspend fun account(accountId: String): NetworkResult<Account> = stubFailure("account")
+    suspend fun account(accountId: String): NetworkResult<Account> = result {
+        warpnet.getAccount(accountId)
+    }
 
     suspend fun accountStatuses(
         accountId: String,
@@ -397,9 +403,17 @@ class MastodonApi @Inject constructor(
         accountId: String,
         showReblogs: Boolean? = null,
         notify: Boolean? = null,
-    ): NetworkResult<Relationship> = stubFailure("followAccount")
+    ): NetworkResult<Relationship> {
+        val me = accountManager.activeAccount?.accountId.orEmpty()
+        if (me.isEmpty()) return stubFailure("followAccount")
+        return result { warpnet.followAccount(followerId = me, followeeId = accountId) }
+    }
 
-    suspend fun unfollowAccount(accountId: String): NetworkResult<Relationship> = stubFailure("unfollowAccount")
+    suspend fun unfollowAccount(accountId: String): NetworkResult<Relationship> {
+        val me = accountManager.activeAccount?.accountId.orEmpty()
+        if (me.isEmpty()) return stubFailure("unfollowAccount")
+        return result { warpnet.unfollowAccount(followerId = me, followeeId = accountId) }
+    }
 
     suspend fun blockAccount(accountId: String): NetworkResult<Relationship> = stubFailure("blockAccount")
 
