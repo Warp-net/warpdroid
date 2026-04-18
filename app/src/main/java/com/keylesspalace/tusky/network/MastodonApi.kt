@@ -59,9 +59,11 @@ import com.keylesspalace.tusky.entity.StatusSource
 import com.keylesspalace.tusky.entity.TimelineAccount
 import com.keylesspalace.tusky.entity.Translation
 import com.keylesspalace.tusky.entity.TrendingTag
+import com.keylesspalace.tusky.warpnet.WarpnetMapper
 import com.keylesspalace.tusky.warpnet.WarpnetRepository
 import javax.inject.Inject
 import javax.inject.Singleton
+import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -90,6 +92,30 @@ class MastodonApi @Inject constructor(
 
     private suspend fun <T> response(block: suspend () -> T): Response<T> = try {
         Response.success(block())
+    } catch (t: Throwable) {
+        Response.error(
+            500,
+            (t.message ?: t.javaClass.simpleName).toResponseBody("text/plain".toMediaTypeOrNull()),
+        )
+    }
+
+    /**
+     * Wrap a Warpnet `(items, nextCursor)` page as a Retrofit [Response] and
+     * synthesise a Mastodon-style `Link: <url?max_id=CURSOR>; rel="next"`
+     * header when a follow-up cursor exists. NetworkTimelineRemoteMediator
+     * (and peers) extract `max_id` from that header to drive pagination.
+     */
+    private suspend fun <T> paginated(block: suspend () -> Pair<List<T>, String>): Response<List<T>> = try {
+        val (items, nextCursor) = block()
+        val headers = if (nextCursor.isNotEmpty()) {
+            Headers.headersOf(
+                "Link",
+                "<${WarpnetMapper.FAKE_BASE_URL}/?max_id=$nextCursor>; rel=\"next\"",
+            )
+        } else {
+            Headers.headersOf()
+        }
+        Response.success(items, headers)
     } catch (t: Throwable) {
         Response.error(
             500,
@@ -157,7 +183,7 @@ class MastodonApi @Inject constructor(
         minId: String? = null,
         sinceId: String? = null,
         limit: Int? = null,
-    ): Response<List<Status>> = response {
+    ): Response<List<Status>> = paginated {
         warpnet.getHomeTimeline(cursor = maxId.orEmpty(), limit = limit ?: 40)
     }
 
@@ -174,7 +200,7 @@ class MastodonApi @Inject constructor(
     ): Response<List<Status>> {
         val userId = accountManager.activeAccount?.accountId.orEmpty()
         if (userId.isEmpty()) return stubList()
-        return response {
+        return paginated {
             warpnet.getUserTimeline(userId = userId, cursor = maxId.orEmpty(), limit = limit ?: 40)
         }
     }
@@ -455,7 +481,7 @@ class MastodonApi @Inject constructor(
         excludeReblogs: Boolean? = null,
         onlyMedia: Boolean? = null,
         pinned: Boolean? = null,
-    ): Response<List<Status>> = response {
+    ): Response<List<Status>> = paginated {
         warpnet.getUserTimeline(userId = accountId, cursor = maxId.orEmpty(), limit = limit ?: 40)
     }
 

@@ -100,24 +100,24 @@ class WarpnetRepository @Inject constructor(
     // Timelines
     // -----------------------------------------------------------------
 
-    /** Aggregated home feed. */
-    suspend fun getHomeTimeline(cursor: String = "", limit: Int = 40): List<Status> {
+    /** Aggregated home feed. Second element is the next-page cursor, empty when exhausted. */
+    suspend fun getHomeTimeline(cursor: String = "", limit: Int = 40): Pair<List<Status>, String> {
         val raw = client.request(
             ProtocolIds.PRIVATE_GET_TIMELINE,
             getAllTweetsAdapter.toJson(GetAllTweetsEvent(userId = "", cursor = cursor, limit = limit)),
         )
-        val page = tweetsRespAdapter.fromJson(raw) ?: return emptyList()
-        return hydrateStatuses(page.tweets)
+        val page = tweetsRespAdapter.fromJson(raw) ?: return emptyList<Status>() to ""
+        return hydrateStatuses(page.tweets) to page.cursor
     }
 
-    /** Public per-user feed. */
-    suspend fun getUserTimeline(userId: String, cursor: String = "", limit: Int = 40): List<Status> {
+    /** Public per-user feed. Second element is the next-page cursor, empty when exhausted. */
+    suspend fun getUserTimeline(userId: String, cursor: String = "", limit: Int = 40): Pair<List<Status>, String> {
         val raw = client.request(
             ProtocolIds.PUBLIC_GET_TWEETS,
             getAllTweetsAdapter.toJson(GetAllTweetsEvent(userId = userId, cursor = cursor, limit = limit)),
         )
-        val page = tweetsRespAdapter.fromJson(raw) ?: return emptyList()
-        return hydrateStatuses(page.tweets)
+        val page = tweetsRespAdapter.fromJson(raw) ?: return emptyList<Status>() to ""
+        return hydrateStatuses(page.tweets) to page.cursor
     }
 
     suspend fun getStatus(tweetId: String, userId: String): Status {
