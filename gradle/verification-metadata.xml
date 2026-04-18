@@ -15,6 +15,13 @@
          entry for every AGP release we move through.
          -->
          <trust file="com\.android\.library\.gradle\.plugin-[0-9.]+[.]pom" regex="true"/>
+         <!--
+         Gradle Module Metadata (.module) files describe variants but the
+         companion .jar/.aar/.pom are still hash-verified below, so trusting
+         the metadata stub by artifact name is safe.
+         -->
+         <trust file="kotlinpoet-[0-9.]+[.]module" regex="true"/>
+         <trust file="room-compiler-processing-[0-9.]+[.]module" regex="true"/>
       </trusted-artifacts>
    </configuration>
    <components>
