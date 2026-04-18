@@ -208,7 +208,13 @@ class MastodonApi @Inject constructor(
         limit: Int? = null,
         excludes: Set<Notification.Type>? = null,
         accountId: String? = null,
-    ): Response<List<Notification>> = stubList()
+    ): Response<List<Notification>> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubList()
+        return response {
+            warpnet.getNotifications(userId = userId, cursor = maxId.orEmpty(), limit = limit ?: 40)
+        }
+    }
 
     suspend fun notification(id: String): Response<Notification> = stubError()
 
@@ -229,7 +235,13 @@ class MastodonApi @Inject constructor(
         auth: String,
         domain: String,
         minId: String?,
-    ): Response<List<Notification>> = stubList()
+    ): Response<List<Notification>> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubList()
+        return response {
+            warpnet.getNotifications(userId = userId, cursor = minId.orEmpty(), limit = 40)
+        }
+    }
 
     suspend fun clearNotifications(): NetworkResult<Unit> = NetworkResult.success(Unit)
 
@@ -254,7 +266,17 @@ class MastodonApi @Inject constructor(
         domain: String,
         idempotencyKey: String,
         status: NewStatus,
-    ): NetworkResult<Status> = stubFailure("createStatus")
+    ): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("createStatus")
+        return result {
+            warpnet.postStatus(
+                text = status.status,
+                authorUserId = active.accountId,
+                authorUsername = active.username,
+                parentId = status.inReplyToId,
+            )
+        }
+    }
 
     suspend fun createScheduledStatus(
         auth: String,
@@ -302,7 +324,27 @@ class MastodonApi @Inject constructor(
     suspend fun deleteStatus(
         statusId: String,
         deleteMedia: Boolean? = null,
-    ): NetworkResult<DeletedStatus> = stubFailure("deleteStatus")
+    ): NetworkResult<DeletedStatus> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubFailure("deleteStatus")
+        return result {
+            warpnet.deleteStatus(tweetId = statusId, userId = userId)
+            // Warpnet's delete returns no body; the Mastodon shape expects a
+            // draftable DeletedStatus. Hand back an empty one — callers use
+            // `DeletedStatus.isEmpty` to skip reopening a draft.
+            DeletedStatus(
+                text = null,
+                inReplyToId = null,
+                spoilerText = "",
+                visibility = Status.Visibility.PUBLIC,
+                sensitive = false,
+                attachments = emptyList(),
+                poll = null,
+                createdAt = java.util.Date(),
+                language = null,
+            )
+        }
+    }
 
     suspend fun reblogStatus(
         statusId: String,
