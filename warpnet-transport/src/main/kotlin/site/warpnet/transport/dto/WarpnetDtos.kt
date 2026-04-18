@@ -131,6 +131,39 @@ data class GetNotificationsEvent(
     val limit: Int = 40,
 )
 
+@JsonClass(generateAdapter = true)
+data class GetFollowersEvent(
+    @Json(name = "user_id") val userId: String,
+    val cursor: String = "",
+    val limit: Int = 40,
+)
+
+@JsonClass(generateAdapter = true)
+data class GetFollowingsEvent(
+    @Json(name = "user_id") val userId: String,
+    val cursor: String = "",
+    val limit: Int = 40,
+)
+
+/**
+ * Probe event for PUBLIC_POST_IS_FOLLOWING / PUBLIC_POST_IS_FOLLOWER.
+ *
+ * The server answers from the caller's perspective: "am I following
+ * `user_id`?" / "does `user_id` follow me?" — so the single field is
+ * the *other* party's id.
+ */
+@JsonClass(generateAdapter = true)
+data class GetIsFollowingEvent(
+    @Json(name = "user_id") val userId: String,
+)
+
+@JsonClass(generateAdapter = true)
+data class GetAllUsersEvent(
+    @Json(name = "user_id") val userId: String,
+    val cursor: String = "",
+    val limit: Int = 40,
+)
+
 // -----------------------------------------------------------------------------
 // Response payloads
 // -----------------------------------------------------------------------------
@@ -162,4 +195,29 @@ data class LikesCountResponse(
 data class GetNotificationsResponse(
     val notifications: List<WarpnetNotification> = emptyList(),
     val cursor: String = "",
+    @Json(name = "unread_count") val unreadCount: Long = 0,
+)
+
+@JsonClass(generateAdapter = true)
+data class FollowersResponse(
+    val followers: List<String> = emptyList(),
+    val cursor: String = "",
+    @Json(name = "following_id") val followingId: String = "",
+)
+
+@JsonClass(generateAdapter = true)
+data class FollowingsResponse(
+    val followings: List<String> = emptyList(),
+    val cursor: String = "",
+    @Json(name = "follower_id") val followerId: String = "",
+)
+
+@JsonClass(generateAdapter = true)
+data class IsFollowingResponse(
+    @Json(name = "is_following") val isFollowing: Boolean = false,
+)
+
+@JsonClass(generateAdapter = true)
+data class IsFollowerResponse(
+    @Json(name = "is_follower") val isFollower: Boolean = false,
 )

@@ -21,12 +21,20 @@ import javax.inject.Singleton
 import site.warpnet.transport.ProtocolIds
 import site.warpnet.transport.WarpnetClient
 import site.warpnet.transport.dto.DeleteTweetEvent
+import site.warpnet.transport.dto.FollowersResponse
+import site.warpnet.transport.dto.FollowingsResponse
 import site.warpnet.transport.dto.GetAllRepliesEvent
 import site.warpnet.transport.dto.GetAllTweetsEvent
+import site.warpnet.transport.dto.GetAllUsersEvent
+import site.warpnet.transport.dto.GetFollowersEvent
+import site.warpnet.transport.dto.GetFollowingsEvent
+import site.warpnet.transport.dto.GetIsFollowingEvent
 import site.warpnet.transport.dto.GetNotificationsEvent
 import site.warpnet.transport.dto.GetNotificationsResponse
 import site.warpnet.transport.dto.GetTweetEvent
 import site.warpnet.transport.dto.GetUserEvent
+import site.warpnet.transport.dto.IsFollowerResponse
+import site.warpnet.transport.dto.IsFollowingResponse
 import site.warpnet.transport.dto.LikeEvent
 import site.warpnet.transport.dto.LikesCountResponse
 import site.warpnet.transport.dto.NewFollowEvent
@@ -34,6 +42,7 @@ import site.warpnet.transport.dto.NewUnfollowEvent
 import site.warpnet.transport.dto.RepliesResponse
 import site.warpnet.transport.dto.TweetsResponse
 import site.warpnet.transport.dto.UnretweetEvent
+import site.warpnet.transport.dto.UsersResponse
 import site.warpnet.transport.dto.WarpnetTweet
 import site.warpnet.transport.dto.WarpnetUser
 
@@ -64,12 +73,21 @@ class WarpnetRepository @Inject constructor(
     private val repliesRespAdapter = moshi.adapter<RepliesResponse>()
     private val notificationsRespAdapter = moshi.adapter<GetNotificationsResponse>()
     private val likesCountAdapter = moshi.adapter<LikesCountResponse>()
+    private val usersRespAdapter = moshi.adapter<UsersResponse>()
+    private val followersRespAdapter = moshi.adapter<FollowersResponse>()
+    private val followingsRespAdapter = moshi.adapter<FollowingsResponse>()
+    private val isFollowingRespAdapter = moshi.adapter<IsFollowingResponse>()
+    private val isFollowerRespAdapter = moshi.adapter<IsFollowerResponse>()
 
     private val getUserAdapter = moshi.adapter<GetUserEvent>()
     private val getAllTweetsAdapter = moshi.adapter<GetAllTweetsEvent>()
+    private val getAllUsersAdapter = moshi.adapter<GetAllUsersEvent>()
     private val getTweetAdapter = moshi.adapter<GetTweetEvent>()
     private val getRepliesAdapter = moshi.adapter<GetAllRepliesEvent>()
     private val getNotifsAdapter = moshi.adapter<GetNotificationsEvent>()
+    private val getFollowersAdapter = moshi.adapter<GetFollowersEvent>()
+    private val getFollowingsAdapter = moshi.adapter<GetFollowingsEvent>()
+    private val getIsFollowingAdapter = moshi.adapter<GetIsFollowingEvent>()
     private val newFollowAdapter = moshi.adapter<NewFollowEvent>()
     private val newUnfollowAdapter = moshi.adapter<NewUnfollowEvent>()
     private val likeEventAdapter = moshi.adapter<LikeEvent>()
@@ -241,24 +259,98 @@ class WarpnetRepository @Inject constructor(
     // Notifications
     // -----------------------------------------------------------------
 
-    suspend fun getNotifications(userId: String, cursor: String = "", limit: Int = 40): List<Notification> {
+    /** Caller's own notifications feed. Second element is the next-page cursor, empty when exhausted. */
+    suspend fun getNotifications(userId: String, cursor: String = "", limit: Int = 40): Pair<List<Notification>, String> {
         val raw = client.request(
             ProtocolIds.PRIVATE_GET_NOTIFICATIONS,
             getNotifsAdapter.toJson(GetNotificationsEvent(userId = userId, cursor = cursor, limit = limit)),
         )
-        val page = notificationsRespAdapter.fromJson(raw) ?: return emptyList()
-        if (page.notifications.isEmpty()) return emptyList()
+        val page = notificationsRespAdapter.fromJson(raw) ?: return emptyList<Notification>() to ""
+        if (page.notifications.isEmpty()) return emptyList<Notification>() to page.cursor
 
         val cache = mutableMapOf<String, WarpnetUser>()
-        return page.notifications.mapNotNull { n ->
+        val mapped = page.notifications.mapNotNull { n ->
             val author = resolveUser(n.fromUserId, cache) ?: return@mapNotNull null
             n.toNotification(author)
         }
+        return mapped to page.cursor
+    }
+
+    // -----------------------------------------------------------------
+    // Followers / followings
+    // -----------------------------------------------------------------
+
+    /**
+     * Fetches a page of accounts that follow [userId]. Warpnet returns only
+     * peer IDs, so each is resolved to a full [WarpnetUser] via [resolveUser].
+     * Unresolvable IDs (dropped peers, deleted accounts) are skipped rather
+     * than surfaced as stub rows.
+     */
+    suspend fun getFollowers(userId: String, cursor: String = "", limit: Int = 40): Pair<List<TimelineAccount>, String> {
+        val raw = client.request(
+            ProtocolIds.PUBLIC_GET_FOLLOWERS,
+            getFollowersAdapter.toJson(GetFollowersEvent(userId = userId, cursor = cursor, limit = limit)),
+        )
+        val page = followersRespAdapter.fromJson(raw) ?: return emptyList<TimelineAccount>() to ""
+        return hydrateAccounts(page.followers) to page.cursor
+    }
+
+    suspend fun getFollowings(userId: String, cursor: String = "", limit: Int = 40): Pair<List<TimelineAccount>, String> {
+        val raw = client.request(
+            ProtocolIds.PUBLIC_GET_FOLLOWINGS,
+            getFollowingsAdapter.toJson(GetFollowingsEvent(userId = userId, cursor = cursor, limit = limit)),
+        )
+        val page = followingsRespAdapter.fromJson(raw) ?: return emptyList<TimelineAccount>() to ""
+        return hydrateAccounts(page.followings) to page.cursor
+    }
+
+    /**
+     * Probe the two directional follow relations for [targetUserId] from the
+     * caller's perspective. Synthesises a Mastodon [Relationship] because
+     * Warpnet has no concept of blocking / muting / pending requests.
+     * Probe failures degrade to `false` so the UI can still render.
+     */
+    suspend fun relationshipFor(targetUserId: String): Relationship {
+        val payload = getIsFollowingAdapter.toJson(GetIsFollowingEvent(userId = targetUserId))
+        val following = runCatching {
+            val raw = client.request(ProtocolIds.PUBLIC_POST_IS_FOLLOWING, payload)
+            isFollowingRespAdapter.fromJson(raw)?.isFollowing ?: false
+        }.getOrElse { false }
+        val followedBy = runCatching {
+            val raw = client.request(ProtocolIds.PUBLIC_POST_IS_FOLLOWER, payload)
+            isFollowerRespAdapter.fromJson(raw)?.isFollower ?: false
+        }.getOrElse { false }
+        return WarpnetMapper.relationshipFrom(targetUserId, following, followedBy)
+    }
+
+    // -----------------------------------------------------------------
+    // Search
+    // -----------------------------------------------------------------
+
+    /**
+     * Enumerate users visible to [requesterUserId]. Warpnet has no server-side
+     * text search, so callers filter client-side after receiving the page.
+     * The `user_id` field is documented as "default owner" — we forward the
+     * caller's id so the server can scope visibility if it chooses to.
+     */
+    suspend fun listUsers(requesterUserId: String, cursor: String = "", limit: Int = 40): Pair<List<TimelineAccount>, String> {
+        val raw = client.request(
+            ProtocolIds.PUBLIC_GET_USERS,
+            getAllUsersAdapter.toJson(GetAllUsersEvent(userId = requesterUserId, cursor = cursor, limit = limit)),
+        )
+        val page = usersRespAdapter.fromJson(raw) ?: return emptyList<TimelineAccount>() to ""
+        return page.users.map { it.toTimelineAccount() } to page.cursor
     }
 
     // -----------------------------------------------------------------
     // Internals
     // -----------------------------------------------------------------
+
+    private suspend fun hydrateAccounts(userIds: List<String>): List<TimelineAccount> {
+        if (userIds.isEmpty()) return emptyList()
+        val cache = mutableMapOf<String, WarpnetUser>()
+        return userIds.mapNotNull { id -> resolveUser(id, cache)?.toTimelineAccount() }
+    }
 
     private suspend fun hydrateStatuses(tweets: List<WarpnetTweet>): List<Status> {
         if (tweets.isEmpty()) return emptyList()

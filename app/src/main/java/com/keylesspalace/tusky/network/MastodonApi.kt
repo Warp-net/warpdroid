@@ -237,7 +237,7 @@ class MastodonApi @Inject constructor(
     ): Response<List<Notification>> {
         val userId = accountManager.activeAccount?.accountId.orEmpty()
         if (userId.isEmpty()) return stubList()
-        return response {
+        return paginated {
             warpnet.getNotifications(userId = userId, cursor = maxId.orEmpty(), limit = limit ?: 40)
         }
     }
@@ -264,7 +264,7 @@ class MastodonApi @Inject constructor(
     ): Response<List<Notification>> {
         val userId = accountManager.activeAccount?.accountId.orEmpty()
         if (userId.isEmpty()) return stubList()
-        return response {
+        return paginated {
             warpnet.getNotifications(userId = userId, cursor = minId.orEmpty(), limit = 40)
         }
     }
@@ -460,12 +460,29 @@ class MastodonApi @Inject constructor(
         fields: Map<String, RequestBody>,
     ): NetworkResult<Account> = stubFailure("accountUpdateCredentials")
 
+    /**
+     * Warpnet has no server-side text search, so we page through
+     * [WarpnetRepository.listUsers] for the caller's viewpoint and filter
+     * usernames/display names client-side. Cheap enough for short queries;
+     * when the catalogue grows we should push this server-side.
+     */
     suspend fun searchAccounts(
         query: String,
         resolve: Boolean? = null,
         limit: Int? = null,
         following: Boolean? = null,
-    ): NetworkResult<List<TimelineAccount>> = NetworkResult.success(emptyList())
+    ): NetworkResult<List<TimelineAccount>> {
+        val me = accountManager.activeAccount?.accountId.orEmpty()
+        if (me.isEmpty() || query.isBlank()) return NetworkResult.success(emptyList())
+        return result {
+            val (users, _) = warpnet.listUsers(requesterUserId = me, limit = (limit ?: 40).coerceAtLeast(1))
+            val needle = query.trim().lowercase()
+            users.filter { acc ->
+                acc.username.lowercase().contains(needle) ||
+                    acc.displayName.orEmpty().lowercase().contains(needle)
+            }
+        }
+    }
 
     suspend fun account(accountId: String): NetworkResult<Account> = result {
         warpnet.getAccount(accountId)
@@ -488,12 +505,16 @@ class MastodonApi @Inject constructor(
     suspend fun accountFollowers(
         accountId: String,
         maxId: String?,
-    ): Response<List<TimelineAccount>> = stubList()
+    ): Response<List<TimelineAccount>> = paginated {
+        warpnet.getFollowers(userId = accountId, cursor = maxId.orEmpty(), limit = 40)
+    }
 
     suspend fun accountFollowing(
         accountId: String,
         maxId: String?,
-    ): Response<List<TimelineAccount>> = stubList()
+    ): Response<List<TimelineAccount>> = paginated {
+        warpnet.getFollowings(userId = accountId, cursor = maxId.orEmpty(), limit = 40)
+    }
 
     suspend fun followAccount(
         accountId: String,
@@ -523,8 +544,9 @@ class MastodonApi @Inject constructor(
 
     suspend fun unmuteAccount(accountId: String): NetworkResult<Relationship> = stubFailure("unmuteAccount")
 
-    suspend fun relationships(accountIds: List<String>): NetworkResult<List<Relationship>> =
-        NetworkResult.success(emptyList())
+    suspend fun relationships(accountIds: List<String>): NetworkResult<List<Relationship>> = result {
+        accountIds.map { warpnet.relationshipFor(it) }
+    }
 
     suspend fun subscribeAccount(accountId: String): NetworkResult<Relationship> = stubFailure("subscribeAccount")
 
