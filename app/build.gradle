@@ -228,6 +228,9 @@ dependencies {
     implementation libs.androidx.hilt.work
     ksp libs.androidx.hilt.compiler
 
+    implementation libs.bundles.room
+    ksp libs.androidx.room.compiler
+
     implementation libs.sparkbutton.compose
 
     implementation libs.touchimageview
