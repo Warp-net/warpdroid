@@ -40,7 +40,6 @@ import com.keylesspalace.tusky.appstore.StatusComposedEvent
 import com.keylesspalace.tusky.appstore.StatusScheduledEvent
 import com.keylesspalace.tusky.components.compose.MediaUploader
 import com.keylesspalace.tusky.components.compose.UploadEvent
-import com.keylesspalace.tusky.components.drafts.DraftHelper
 import com.keylesspalace.tusky.db.AccountManager
 import com.keylesspalace.tusky.entity.Attachment
 import com.keylesspalace.tusky.entity.MediaAttribute
@@ -75,9 +74,6 @@ class SendStatusService : Service() {
 
     @Inject
     lateinit var eventHub: EventHub
-
-    @Inject
-    lateinit var draftHelper: DraftHelper
 
     @Inject
     lateinit var mediaUploader: MediaUploader
@@ -281,10 +277,7 @@ class SendStatusService : Service() {
 
             sendResult.fold({ sentStatus ->
                 statusesToSend.remove(statusId)
-                // If the status was loaded from a draft, delete the draft and associated media files.
-                if (statusToSend.draftId != 0) {
-                    draftHelper.deleteDraftAndAttachments(statusToSend.draftId)
-                }
+                // Warpdroid has no drafts table, so nothing to delete here.
 
                 mediaUploader.cancelUploadScope(*statusToSend.media.map { it.localId }.toIntArray())
 
@@ -384,25 +377,9 @@ class SendStatusService : Service() {
         }
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private suspend fun saveStatusToDrafts(status: StatusToSend, failedToSendAlert: Boolean) {
-        draftHelper.saveDraft(
-            draftId = status.draftId,
-            accountId = status.accountId,
-            inReplyToId = status.inReplyToId,
-            content = status.text,
-            contentWarning = status.warningText,
-            sensitive = status.sensitive,
-            visibility = Status.Visibility.fromStringValue(status.visibility),
-            mediaUris = status.media.map { it.uri },
-            mediaDescriptions = status.media.map { it.description },
-            mediaFocus = status.media.map { it.focus },
-            poll = status.poll,
-            failedToSend = true,
-            failedToSendAlert = failedToSendAlert,
-            scheduledAt = status.scheduledAt,
-            language = status.language,
-            statusId = status.statusId
-        )
+        // TODO(warpdroid): drafts persistence was removed with Room; no-op.
     }
 
     private fun cancelSendingIntent(statusId: Int): PendingIntent {

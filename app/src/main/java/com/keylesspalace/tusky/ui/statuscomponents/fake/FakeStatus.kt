@@ -16,8 +16,6 @@
 package com.keylesspalace.tusky.ui.statuscomponents.fake
 
 import at.connyduck.sparkbutton.compose.SparkButtonState
-import com.keylesspalace.tusky.components.conversation.ConversationAccountEntity
-import com.keylesspalace.tusky.components.conversation.ConversationViewData
 import com.keylesspalace.tusky.entity.Attachment
 import com.keylesspalace.tusky.entity.HashTag
 import com.keylesspalace.tusky.entity.Poll
@@ -171,24 +169,6 @@ val pollWithFourOptions = Poll(
         ),
     ),
     ownVotes = listOf(2)
-)
-
-fun fakeConversation() = ConversationViewData(
-    id = "987654321",
-    order = 4,
-    lastStatus = fakeStatusViewData(),
-    accounts = listOf(
-        ConversationAccountEntity(
-            id = "01HAWDAG8VXPW2D6PZFA3MQ3FH",
-            localUsername = "connyduck",
-            username = "connyduck@fosspri.de",
-            displayName = "Conny Duck Test",
-            avatar = "https://goblin.technology/assets/default_avatars/GoToSocial_icon4.webp",
-            staticAvatar = "https://goblin.technology/assets/default_avatars/GoToSocial_icon4.webp",
-            emojis = emptyList()
-        )
-    ),
-    unread = false
 )
 
 val noopListener = object : StatusActionListener {

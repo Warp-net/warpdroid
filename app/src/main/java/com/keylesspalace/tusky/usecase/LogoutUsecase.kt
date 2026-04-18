@@ -1,9 +1,7 @@
 package com.keylesspalace.tusky.usecase
 
-import com.keylesspalace.tusky.components.drafts.DraftHelper
 import com.keylesspalace.tusky.components.systemnotifications.NotificationHelper
 import com.keylesspalace.tusky.db.AccountManager
-import com.keylesspalace.tusky.db.DatabaseCleaner
 import com.keylesspalace.tusky.db.entity.AccountEntity
 import com.keylesspalace.tusky.network.MastodonApi
 import com.keylesspalace.tusky.util.ShareShortcutHelper
@@ -11,9 +9,7 @@ import javax.inject.Inject
 
 class LogoutUsecase @Inject constructor(
     private val api: MastodonApi,
-    private val databaseCleaner: DatabaseCleaner,
     private val accountManager: AccountManager,
-    private val draftHelper: DraftHelper,
     private val shareShortcutHelper: ShareShortcutHelper,
     private val notificationHelper: NotificationHelper,
 ) {
@@ -40,9 +36,7 @@ class LogoutUsecase @Inject constructor(
         // remove account from local AccountManager
         val otherAccountAvailable = accountManager.remove(account) != null
 
-        // clear the database - this could trigger network calls so do it last when all tokens are gone
-        databaseCleaner.cleanupEverything(account.id)
-        draftHelper.deleteAllDraftsAndAttachmentsForAccount(account.id)
+        // No local database or drafts table in Warpdroid — nothing to clean.
 
         // remove shortcut associated with the account
         shareShortcutHelper.removeShortcut(account)

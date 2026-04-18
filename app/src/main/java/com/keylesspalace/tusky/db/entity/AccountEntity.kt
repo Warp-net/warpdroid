@@ -1,58 +1,40 @@
-/* Copyright 2018 Conny Duck
- *
- * This file is a part of Tusky.
- *
- * This program is free software; you can redistribute it and/or modify it under the terms of the
- * GNU General Public License as published by the Free Software Foundation; either version 3 of the
- * License, or (at your option) any later version.
- *
- * Tusky is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
- * the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
- * Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along with Tusky; if not,
- * see <http://www.gnu.org/licenses>. */
-
+/*
+ * Warpdroid - a Warpnet Android client.
+ * Copyright (C) 2026 Warpdroid contributors.
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
 package com.keylesspalace.tusky.db.entity
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-import androidx.room.TypeConverters
 import com.keylesspalace.tusky.TabData
 import com.keylesspalace.tusky.components.systemnotifications.NotificationChannelData
-import com.keylesspalace.tusky.db.Converters
 import com.keylesspalace.tusky.defaultTabs
 import com.keylesspalace.tusky.entity.Emoji
 import com.keylesspalace.tusky.entity.Status
 import com.keylesspalace.tusky.settings.DefaultReplyVisibility
 import com.keylesspalace.tusky.settings.QuotePolicy
 
-@Entity(
-    indices = [
-        Index(
-            value = ["domain", "accountId"],
-            unique = true
-        )
-    ]
-)
-@TypeConverters(Converters::class)
+/**
+ * In-memory replacement for Tusky's Room-backed account record.
+ *
+ * Warpdroid has no login or per-account persistence — there is exactly one
+ * stub account (see [com.keylesspalace.tusky.db.AccountManager]) which exists
+ * for the lifetime of the process. The field surface is preserved so
+ * downstream call sites (UI preferences, status display options, etc.) keep
+ * compiling without being rewritten.
+ */
 data class AccountEntity(
-    @field:PrimaryKey(autoGenerate = true) val id: Long,
+    val id: Long,
     val domain: String,
     val accessToken: String,
-    // nullable for backward compatibility
     val clientId: String?,
-    // nullable for backward compatibility
     val clientSecret: String?,
     val isActive: Boolean,
     val accountId: String = "",
     val username: String = "",
     val displayName: String = "",
     val profilePictureUrl: String = "",
-    @ColumnInfo(defaultValue = "") val staticProfilePictureUrl: String = "",
-    @ColumnInfo(defaultValue = "") val profileHeaderUrl: String = "",
+    val staticProfilePictureUrl: String = "",
+    val profileHeaderUrl: String = "",
     val notificationsEnabled: Boolean = true,
     val notificationsMentioned: Boolean = true,
     val notificationsFollowed: Boolean = true,
@@ -62,8 +44,8 @@ data class AccountEntity(
     val notificationsPolls: Boolean = true,
     val notificationsSubscriptions: Boolean = true,
     val notificationsUpdates: Boolean = true,
-    @ColumnInfo(defaultValue = "true") val notificationsAdmin: Boolean = true,
-    @ColumnInfo(defaultValue = "true") val notificationsOther: Boolean = true,
+    val notificationsAdmin: Boolean = true,
+    val notificationsOther: Boolean = true,
     val notificationSound: Boolean = true,
     val notificationVibration: Boolean = true,
     val notificationLight: Boolean = true,
@@ -71,55 +53,24 @@ data class AccountEntity(
     val defaultReplyPrivacy: DefaultReplyVisibility = DefaultReplyVisibility.MATCH_DEFAULT_POST_VISIBILITY,
     val defaultMediaSensitivity: Boolean = false,
     val defaultPostLanguage: String = "",
-    @ColumnInfo(defaultValue = "followers") val defaultQuotePolicy: QuotePolicy = QuotePolicy.FOLLOWERS,
+    val defaultQuotePolicy: QuotePolicy = QuotePolicy.FOLLOWERS,
     val alwaysShowSensitiveMedia: Boolean = false,
-    /** True if content behind a content warning is shown by default */
-    @ColumnInfo(defaultValue = "0")
     val alwaysOpenSpoiler: Boolean = false,
-
-    /**
-     * True if the "Download media previews" preference is true. This implies
-     * that media previews are shown as well as downloaded.
-     */
     val mediaPreviewEnabled: Boolean = true,
-    /**
-     * ID of the last notification the user read on the Notification, list, and should be restored
-     * to view when the user returns to the list.
-     *
-     * May not be the ID of the most recent notification if the user has scrolled down the list.
-     */
     val lastNotificationId: String = "0",
-    /**
-     *  ID of the most recent Mastodon notification that Tusky has fetched to show as an
-     *  Android notification.
-     */
-    @ColumnInfo(defaultValue = "0")
     val notificationMarkerId: String = "0",
     val emojis: List<Emoji> = emptyList(),
     val tabPreferences: List<TabData> = defaultTabs(),
     val notificationsFilter: Set<NotificationChannelData> = emptySet(),
-    // Scope cannot be changed without re-login, so store it in case
-    // the scope needs to be changed in the future
     val oauthScopes: String = "",
     val unifiedPushUrl: String = "",
-
-    /** to save and restore home timeline position **/
-    @ColumnInfo(defaultValue = "0")
     val firstVisibleHomeTimelineItemIndex: Int = 0,
-
-    @ColumnInfo(defaultValue = "0")
     val firstVisibleHomeTimelineItemOffset: Int = 0,
-
-    /** true if the connected Mastodon account is locked (has to manually approve all follow requests **/
-    @ColumnInfo(defaultValue = "0")
     val locked: Boolean = false,
-
-    @ColumnInfo(defaultValue = "0")
     val hasDirectMessageBadge: Boolean = false,
-
     val isShowHomeBoosts: Boolean = true,
     val isShowHomeReplies: Boolean = true,
-    val isShowHomeSelfBoosts: Boolean = true
+    val isShowHomeSelfBoosts: Boolean = true,
 ) {
     val identifier: String
         get() = "$domain:$accountId"
@@ -127,11 +78,7 @@ data class AccountEntity(
     val fullName: String
         get() = "@$username@$domain"
 
-    fun isPushNotificationsEnabled(): Boolean {
-        return unifiedPushUrl.isNotEmpty()
-    }
+    fun isPushNotificationsEnabled(): Boolean = unifiedPushUrl.isNotEmpty()
 
-    fun matchesPushSubscription(endpoint: String): Boolean {
-        return unifiedPushUrl == endpoint
-    }
+    fun matchesPushSubscription(endpoint: String): Boolean = unifiedPushUrl == endpoint
 }

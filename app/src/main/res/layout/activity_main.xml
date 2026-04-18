@@ -54,6 +54,20 @@
 
             </com.google.android.material.appbar.MaterialToolbar>
 
+            <TextView
+                android:id="@+id/warpnetOfflineBanner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/colorError"
+                android:gravity="center"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:textColor="?attr/colorOnError"
+                android:textSize="14sp"
+                android:visibility="gone"
+                tools:text="Desktop node offline"
+                tools:visibility="visible" />
+
         </com.google.android.material.appbar.AppBarLayout>
 
         <androidx.viewpager2.widget.ViewPager2

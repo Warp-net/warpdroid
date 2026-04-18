@@ -16,22 +16,28 @@ apply from: 'getGitSha.gradle'
 final def gitSha = ext.getGitSha()
 
 // The app name
-final def APP_NAME = "Tusky"
-// The application id. Must be unique, e.g. based on your domain
-final def APP_ID = "com.keylesspalace.tusky"
-// url of a custom app logo. Recommended size at least 600x600. Keep empty to use the Tusky elephant friend.
+final def APP_NAME = "Warpdroid"
+// The application id. Must be unique, e.g. based on your domain.
+// Warpdroid is a Warpnet Android client forked from Tusky; keep distinct from
+// upstream Tusky so both can be installed side by side on a user device.
+final def APP_ID = "site.warpnet.warpdroid"
+// Internal Gradle/AGP namespace. Tusky source still lives under
+// com.keylesspalace.tusky to minimise churn; namespace drives the R and
+// BuildConfig packages only.
+final def APP_NAMESPACE = "com.keylesspalace.tusky"
+// url of a custom app logo. Recommended size at least 600x600.
 final def CUSTOM_LOGO_URL = ""
-// e.g. mastodon.social. Keep empty to not suggest any instance on the signup screen
+// Unused in Warpdroid (no Mastodon instance picker). Kept to satisfy existing
+// BuildConfig references during the strip-down.
 final def CUSTOM_INSTANCE = ""
-// link to your support account. Will be linked on the about page when not empty.
-final def SUPPORT_ACCOUNT_URL = "https://mastodon.social/@Tusky"
+// Link shown on the About screen.
+final def SUPPORT_ACCOUNT_URL = "https://github.com/Warp-net/warpdroid"
 
 android {
     compileSdk = 36
-    namespace = "com.keylesspalace.tusky"
+    namespace = APP_NAMESPACE
     defaultConfig {
         applicationId = APP_ID
-        namespace = "com.keylesspalace.tusky"
         minSdk = 24
         targetSdk = 36
         versionCode = 142
@@ -111,22 +117,6 @@ android {
         viewBinding true
     }
 
-    testOptions {
-        unitTests {
-            returnDefaultValues = true
-            includeAndroidResources = true
-        }
-        unitTests.all {
-            systemProperty 'robolectric.logging.enabled', 'true'
-            systemProperty 'robolectric.lazyload', 'ON'
-        }
-    }
-    sourceSets {
-        // workaround to have migrations available in unit tests
-        // https://github.com/robolectric/robolectric/issues/3928#issuecomment-395309991
-        debug.assets.srcDirs += files("$projectDir/schemas".toString())
-    }
-
     // Exclude unneeded files added by libraries
     packagingOptions.resources.excludes += [
         'LICENSE_OFL',
@@ -143,14 +133,28 @@ android {
             enableSplit = false
         }
     }
+
+    // Warpnet ships a Go runtime (via gomobile) for libp2p. Keep only the
+    // ABIs realistic phones actually use so the APK doesn't grow needlessly.
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a'
+            universalApk false
+        }
+    }
     dependenciesInfo {
         includeInApk false
         includeInBundle false
     }
     applicationVariants.configureEach { variant ->
-        variant.outputs.configureEach {
-            outputFileName = "Tusky_${variant.versionName}_${variant.versionCode}_${gitSha}_" +
-                "${variant.flavorName}_${buildType.name}.apk"
+        variant.outputs.configureEach { output ->
+            // Splits produce one APK per ABI per variant; include the ABI filter
+            // in the name so the four outputs don't collide on the same path.
+            def abi = output.getFilter(com.android.build.OutputFile.ABI) ?: "universal"
+            outputFileName = "Warpdroid_${variant.versionName}_${variant.versionCode}_${gitSha}_" +
+                "${variant.flavorName}_${buildType.name}_${abi}.apk"
         }
     }
 
@@ -164,12 +168,6 @@ android {
     }
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
-    arg("room.generateKotlin", "true")
-    arg("room.incremental", "true")
-}
-
 licensee {
     allow(SpdxId.Apache_20)
     allow(SpdxId.MIT)
@@ -177,20 +175,15 @@ licensee {
     allowUrl('https://github.com/AOMediaCodec/libavif/blob/master/LICENSE')
 }
 
-configurations {
-    // JNI-only libraries don't play nicely with Robolectric
-    // see https://github.com/tuskyapp/Tusky/pull/3367
-    testImplementation.exclude group: "org.conscrypt", module: "conscrypt-android"
-    testRuntime.exclude group: "org.conscrypt", module: "conscrypt-android"
-}
-
 // library versions are in PROJECT_ROOT/gradle/libs.versions.toml
+// The warpnet.aar + gomobile rebuild task live in :warpnet-transport, which
+// the app module depends on transitively.
 dependencies {
+    implementation project(":warpnet-transport")
+
     implementation libs.kotlinx.coroutines.android
 
     implementation libs.bundles.androidx
-    implementation libs.bundles.room
-    ksp libs.androidx.room.compiler
 
     implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.material
@@ -235,18 +228,19 @@ dependencies {
     implementation libs.bundles.xmldiff
 
     implementation(libs.ktxml)
-
-    testImplementation libs.androidx.test.junit
-    testImplementation libs.robolectric
-    testImplementation libs.bundles.mockito
-    testImplementation libs.mockwebserver
-    testImplementation libs.androidx.core.testing
-    testImplementation libs.androidx.room.testing
-    testImplementation libs.kotlinx.coroutines.test
-    testImplementation libs.androidx.work.testing
-    testImplementation libs.androidx.paging.test
-    testImplementation libs.turbine
-
-    testImplementation libs.androidx.compose.test
-    debugImplementation libs.androidx.compose.test.manifest
 }
+
+// Hilt's XProcessing framework transitively pulls androidx.room:room-compiler-processing
+// onto the KSP processor classpath. With Room itself no longer declared, nothing pins the
+// version, and the resolver falls back to 2.6.0 — a version whose sha256 isn't in
+// gradle/verification-metadata.xml. Pin it to the already-verified 2.6.1 instead.
+configurations.configureEach {
+    resolutionStrategy {
+        force "androidx.room:room-compiler-processing:2.6.1"
+    }
+}
+
+// Retrofit and OkHttp are still listed in libs.versions.toml for now;
+// they will be removed in a follow-up commit once the Warpnet transport has
+// fully replaced their call sites. Leaving them as unused `libs.*` aliases
+// does not bloat the APK (unreferenced aliases are not resolved).

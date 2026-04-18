@@ -27,7 +27,6 @@ import com.google.android.material.snackbar.Snackbar
 import com.keylesspalace.tusky.BaseActivity
 import com.keylesspalace.tusky.BuildConfig
 import com.keylesspalace.tusky.R
-import com.keylesspalace.tusky.TabPreferenceActivity
 import com.keylesspalace.tusky.appstore.EventHub
 import com.keylesspalace.tusky.appstore.PreferenceChangedEvent
 import com.keylesspalace.tusky.components.accountlist.AccountListActivity
@@ -83,15 +82,7 @@ class AccountPreferencesFragment : BasePreferencesFragment() {
                 }
             }
 
-            preference {
-                setTitle(R.string.title_tab_preferences)
-                icon = icon(R.drawable.ic_tabs_24dp)
-                setOnPreferenceClickListener {
-                    val intent = Intent(context, TabPreferenceActivity::class.java)
-                    activity?.startActivityWithSlideInAnimation(intent)
-                    true
-                }
-            }
+            // "Customize tabs" is removed in Warpdroid — the two tabs are fixed.
 
             preference {
                 setTitle(R.string.title_followed_hashtags)

@@ -88,7 +88,6 @@ import com.keylesspalace.tusky.components.editimage.EditImageResult
 import com.keylesspalace.tusky.components.instanceinfo.InstanceInfoRepository
 import com.keylesspalace.tusky.databinding.ActivityComposeBinding
 import com.keylesspalace.tusky.db.entity.AccountEntity
-import com.keylesspalace.tusky.db.entity.DraftAttachment
 import com.keylesspalace.tusky.entity.Attachment
 import com.keylesspalace.tusky.entity.Emoji
 import com.keylesspalace.tusky.entity.NewPoll
@@ -1426,7 +1425,6 @@ class ComposeActivity :
         val replyingStatusAuthor: String? = null,
         val replyingStatusContent: String? = null,
         val mediaAttachments: List<Attachment>? = null,
-        val draftAttachments: List<DraftAttachment>? = null,
         val scheduledAt: String? = null,
         val sensitive: Boolean? = null,
         val poll: NewPoll? = null,

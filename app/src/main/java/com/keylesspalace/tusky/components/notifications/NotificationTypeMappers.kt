@@ -15,52 +15,14 @@
 
 package com.keylesspalace.tusky.components.notifications
 
-import com.keylesspalace.tusky.components.timeline.LoadMorePlaceholder
-import com.keylesspalace.tusky.components.timeline.toAccount
-import com.keylesspalace.tusky.components.timeline.toStatus
-import com.keylesspalace.tusky.db.entity.NotificationDataEntity
-import com.keylesspalace.tusky.db.entity.NotificationEntity
-import com.keylesspalace.tusky.db.entity.NotificationReportEntity
-import com.keylesspalace.tusky.db.entity.TimelineAccountEntity
 import com.keylesspalace.tusky.entity.Filter
 import com.keylesspalace.tusky.entity.Notification
-import com.keylesspalace.tusky.entity.Report
 import com.keylesspalace.tusky.util.toViewData
 import com.keylesspalace.tusky.viewdata.NotificationViewData
-import com.keylesspalace.tusky.viewdata.QuoteViewData
-import com.keylesspalace.tusky.viewdata.StatusViewData
-import com.keylesspalace.tusky.viewdata.TranslationViewData
 
-fun LoadMorePlaceholder.toNotificationEntity(
-    tuskyAccountId: Long
-) = NotificationEntity(
-    id = this.id,
-    tuskyAccountId = tuskyAccountId,
-    type = null,
-    accountId = null,
-    statusId = null,
-    reportId = null,
-    event = null,
-    moderationWarning = null,
-    loading = loading
-)
-
-fun Notification.toEntity(
-    tuskyAccountId: Long
-) = NotificationEntity(
-    tuskyAccountId = tuskyAccountId,
-    type = type,
-    id = id,
-    accountId = account.id,
-    statusId = status?.reblog?.id ?: status?.id,
-    reportId = report?.id,
-    event = event,
-    moderationWarning = moderationWarning,
-    loading = false,
-    emoji = emoji,
-    emojiUrl = emojiUrl,
-)
-
+// The Room-backed entity mappers that used to live here were deleted alongside
+// AppDatabase. Only the network-only Notification -> NotificationViewData
+// converter is still needed, by NotificationRequestDetailsRemoteMediator.
 fun Notification.toViewData(
     isShowingContent: Boolean,
     isExpanded: Boolean,
@@ -90,91 +52,4 @@ fun Notification.toViewData(
     event = event,
     emoji = emoji,
     emojiUrl = emojiUrl,
-)
-
-fun Report.toEntity(
-    tuskyAccountId: Long
-) = NotificationReportEntity(
-    tuskyAccountId = tuskyAccountId,
-    serverId = id,
-    category = category,
-    statusIds = statusIds,
-    createdAt = createdAt,
-    targetAccountId = targetAccount.id
-)
-
-fun NotificationDataEntity.toViewData(
-    translation: TranslationViewData? = null
-): NotificationViewData {
-    if (type == null || account == null) {
-        return NotificationViewData.LoadMore(id = id, isLoading = loading)
-    }
-
-    return NotificationViewData.Concrete(
-        id = id,
-        type = type,
-        account = account.toAccount(),
-        statusViewData = if (status != null && statusAccount != null) {
-            val status = status.toStatus(
-                account = statusAccount,
-                quotedStatus = quotedStatus,
-                quotedStatusAccount = quotedStatusAccount
-            )
-            StatusViewData.Concrete(
-                status = status,
-                isExpanded = this.status.expanded,
-                isShowingContent = this.status.contentShowing,
-                isCollapsed = this.status.contentCollapsed,
-                translation = translation,
-                filter = status.getApplicableFilter(Filter.Kind.NOTIFICATIONS),
-                filterActive = this.status.filterActive,
-                quote = status.quote?.let {
-                    QuoteViewData(
-                        state = status.quote.state,
-                        quotedStatusViewData = if (status.quote.quotedStatus != null && quotedStatus != null && quotedStatusAccount != null) {
-                            StatusViewData.Concrete(
-                                status = status.quote.quotedStatus,
-                                isExpanded = quotedStatus.expanded,
-                                isShowingContent = quotedStatus.contentShowing,
-                                isCollapsed = quotedStatus.contentCollapsed,
-                                translation = null,
-                                filterActive = true,
-                                quote = quotedStatus.quoteState?.let { quoteState ->
-                                    QuoteViewData(
-                                        state = quoteState,
-                                        quotedStatusViewData = null,
-                                        quoteShown = quotedStatus.quoteShown
-                                    )
-                                }
-                            )
-                        } else {
-                            null
-                        },
-                        quoteShown = this.status.quoteShown
-                    )
-                }
-            )
-        } else {
-            null
-        },
-        report = if (report != null && reportTargetAccount != null) {
-            report.toReport(reportTargetAccount)
-        } else {
-            null
-        },
-        event = event,
-        moderationWarning = moderationWarning,
-        emoji = emoji,
-        emojiUrl = emojiUrl,
-    )
-}
-
-fun NotificationReportEntity.toReport(
-    account: TimelineAccountEntity
-) = Report(
-    id = serverId,
-    category = category,
-    statusIds = statusIds,
-    createdAt = createdAt,
-    targetAccount = account.toAccount()
 )

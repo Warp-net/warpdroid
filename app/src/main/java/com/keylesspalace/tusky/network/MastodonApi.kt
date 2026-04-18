@@ -1,22 +1,31 @@
-/* Copyright 2017 Andrew Dawson
+/*
+ * Warpdroid - a Warpnet Android client.
+ * Copyright (C) 2026 Warpdroid contributors.
+ * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * This file is a part of Tusky.
+ * Drop-in stand-in for Tusky's Retrofit MastodonApi interface.
  *
- * This program is free software; you can redistribute it and/or modify it under the terms of the
- * GNU General Public License as published by the Free Software Foundation; either version 3 of the
- * License, or (at your option) any later version.
+ * Warpnet is a libp2p P2P network, not an HTTP Mastodon instance, so this
+ * class is NOT backed by Retrofit. It keeps the same method signatures and
+ * return types as the original so the ~50 view models / use cases that call
+ * it keep compiling. Behaviour per method is one of two things:
  *
- * Tusky is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
- * the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
- * Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along with Tusky; if not,
- * see <http://www.gnu.org/licenses>. */
-
+ *   - **Stubbed** — returns a predefined `NetworkResult.failure` or
+ *     `Response.error(501, ...)`. Used for surfaces with no Warpnet
+ *     equivalent (filters, lists, announcements, domain blocks, reports,
+ *     scheduled statuses, trending, translate, polls, push subscriptions,
+ *     custom emojis, OAuth, instance metadata, bookmarks, markers,
+ *     conversations — the fediverse/instance-admin half of the Mastodon
+ *     API). Chunk 1 stubs everything; subsequent chunks migrate tractable
+ *     methods to [WarpnetRepository].
+ *   - **Warpnet-backed** — delegates to [WarpnetRepository]. None in this
+ *     chunk; chunks 2-5 wire these in one feature group at a time.
+ */
 package com.keylesspalace.tusky.network
 
 import at.connyduck.calladapter.networkresult.NetworkResult
 import com.keylesspalace.tusky.components.filters.FilterExpiration
+import com.keylesspalace.tusky.db.AccountManager
 import com.keylesspalace.tusky.entity.AccessToken
 import com.keylesspalace.tusky.entity.Account
 import com.keylesspalace.tusky.entity.Announcement
@@ -29,7 +38,9 @@ import com.keylesspalace.tusky.entity.Filter
 import com.keylesspalace.tusky.entity.FilterKeyword
 import com.keylesspalace.tusky.entity.HashTag
 import com.keylesspalace.tusky.entity.Instance
+import com.keylesspalace.tusky.entity.InstanceConfiguration
 import com.keylesspalace.tusky.entity.InstanceV1
+import com.keylesspalace.tusky.entity.StatusConfiguration
 import com.keylesspalace.tusky.entity.Marker
 import com.keylesspalace.tusky.entity.MastoList
 import com.keylesspalace.tusky.entity.MediaUploadResult
@@ -50,698 +61,788 @@ import com.keylesspalace.tusky.entity.StatusSource
 import com.keylesspalace.tusky.entity.TimelineAccount
 import com.keylesspalace.tusky.entity.Translation
 import com.keylesspalace.tusky.entity.TrendingTag
+import com.keylesspalace.tusky.warpnet.WarpnetMapper
+import com.keylesspalace.tusky.warpnet.WarpnetRepository
+import javax.inject.Inject
+import javax.inject.Singleton
+import okhttp3.Headers
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.Response
-import retrofit2.http.Body
-import retrofit2.http.DELETE
-import retrofit2.http.Field
-import retrofit2.http.FieldMap
-import retrofit2.http.FormUrlEncoded
-import retrofit2.http.GET
-import retrofit2.http.HTTP
-import retrofit2.http.Header
-import retrofit2.http.Multipart
-import retrofit2.http.PATCH
-import retrofit2.http.POST
-import retrofit2.http.PUT
-import retrofit2.http.Part
-import retrofit2.http.PartMap
-import retrofit2.http.Path
-import retrofit2.http.Query
 
-/**
- * for documentation of the Mastodon REST API see https://docs.joinmastodon.org/api/
- */
-
-@JvmSuppressWildcards
-interface MastodonApi {
+@Singleton
+class MastodonApi @Inject constructor(
+    @Suppress("unused") private val warpnet: WarpnetRepository,
+    @Suppress("unused") private val accountManager: AccountManager,
+) {
 
     companion object {
         const val ENDPOINT_AUTHORIZE = "oauth/authorize"
         const val DOMAIN_HEADER = "domain"
         const val PLACEHOLDER_DOMAIN = "dummy.placeholder"
+
+        // Instance stub values — no Warpnet endpoint reports these, so we
+        // hard-code the compose / onboarding UX against known node limits.
+        private const val WARPNET_INSTANCE_VERSION = "0.0.0"
+        private const val WARPNET_MAX_TWEET_CHARS = 2000
+
+        private val STUB_BODY = "".toResponseBody("text/plain".toMediaTypeOrNull())
+        private fun unsupported(name: String) =
+            UnsupportedOperationException("MastodonApi.$name has no Warpnet equivalent")
+        private fun <T> stubFailure(name: String): NetworkResult<T> =
+            NetworkResult.failure(unsupported(name))
+        private fun <T> stubError(): Response<T> = Response.error(501, STUB_BODY)
+        private fun <T> stubList(): Response<List<T>> = Response.success(emptyList())
     }
 
-    @GET("/api/v1/custom_emojis")
-    suspend fun getCustomEmojis(): NetworkResult<List<Emoji>>
-
-    @GET("api/v1/instance")
-    suspend fun getInstanceV1(): NetworkResult<InstanceV1>
-
-    @GET("api/v2/instance")
-    suspend fun getInstance(): NetworkResult<Instance>
-
-    @GET("api/v2/filters/{filterId}")
-    suspend fun getFilter(@Path("filterId") filterId: String): NetworkResult<Filter>
-
-    @GET("api/v2/filters")
-    suspend fun getFilters(): NetworkResult<List<Filter>>
-
-    @GET("api/v1/timelines/home")
-    @Throws(Exception::class)
-    suspend fun homeTimeline(
-        @Query("max_id") maxId: String? = null,
-        @Query("min_id") minId: String? = null,
-        @Query("since_id") sinceId: String? = null,
-        @Query("limit") limit: Int? = null
-    ): Response<List<Status>>
-
-    @GET("api/v1/timelines/public")
-    suspend fun publicTimeline(
-        @Query("local") local: Boolean? = null,
-        @Query("max_id") maxId: String? = null,
-        @Query("min_id") minId: String? = null,
-        @Query("since_id") sinceId: String? = null,
-        @Query("limit") limit: Int? = null
-    ): Response<List<Status>>
-
-    @GET("api/v1/timelines/tag/{hashtag}")
-    suspend fun hashtagTimeline(
-        @Path("hashtag") hashtag: String,
-        @Query("any[]") any: List<String>?,
-        @Query("local") local: Boolean?,
-        @Query("max_id") maxId: String?,
-        @Query("min_id") minId: String? = null,
-        @Query("since_id") sinceId: String?,
-        @Query("limit") limit: Int?
-    ): Response<List<Status>>
-
-    @GET("api/v1/timelines/list/{listId}")
-    suspend fun listTimeline(
-        @Path("listId") listId: String,
-        @Query("max_id") maxId: String?,
-        @Query("min_id") minId: String? = null,
-        @Query("since_id") sinceId: String?,
-        @Query("limit") limit: Int?
-    ): Response<List<Status>>
-
-    @GET("api/v1/notifications")
-    @Throws(Exception::class)
-    suspend fun notifications(
-        /** Return results older than this ID */
-        @Query("max_id") maxId: String? = null,
-        /** Return results newer than this ID */
-        @Query("since_id") sinceId: String? = null,
-        /** Return results immediately newer than this ID */
-        @Query("min_id") minId: String? = null,
-        /** Maximum number of results to return. Defaults to 15, max is 30 */
-        @Query("limit") limit: Int? = null,
-        /** Types to excludes from the results */
-        @Query("exclude_types[]") excludes: Set<Notification.Type>? = null,
-        /** Return only notifications received from the specified account. */
-        @Query("account_id") accountId: String? = null
-    ): Response<List<Notification>>
-
-    /** Fetch a single notification */
-    @GET("api/v1/notifications/{id}")
-    suspend fun notification(@Path("id") id: String): Response<Notification>
-
-    @GET("api/v1/markers")
-    suspend fun markersWithAuth(
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String,
-        @Query("timeline[]") timelines: List<String>
-    ): Map<String, Marker>
-
-    @FormUrlEncoded
-    @POST("api/v1/markers")
-    suspend fun updateMarkersWithAuth(
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String,
-        @Field("home[last_read_id]") homeLastReadId: String? = null,
-        @Field("notifications[last_read_id]") notificationsLastReadId: String? = null
-    ): NetworkResult<Unit>
-
-    @GET("api/v1/notifications")
-    suspend fun notificationsWithAuth(
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String,
-        /** Return results immediately newer than this ID */
-        @Query("min_id") minId: String?
-    ): Response<List<Notification>>
-
-    @POST("api/v1/notifications/clear")
-    suspend fun clearNotifications(): NetworkResult<Unit>
-
-    @FormUrlEncoded
-    @PUT("api/v1/media/{mediaId}")
-    suspend fun updateMedia(
-        @Path("mediaId") mediaId: String,
-        @Field("description") description: String?,
-        @Field("focus") focus: String?
-    ): NetworkResult<Attachment>
-
-    @GET("api/v1/media/{mediaId}")
-    suspend fun getMedia(@Path("mediaId") mediaId: String): Response<MediaUploadResult>
-
-    @POST("api/v1/statuses")
-    suspend fun createStatus(
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String,
-        @Header("Idempotency-Key") idempotencyKey: String,
-        @Body status: NewStatus
-    ): NetworkResult<Status>
-
-    @POST("api/v1/statuses")
-    suspend fun createScheduledStatus(
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String,
-        @Header("Idempotency-Key") idempotencyKey: String,
-        @Body status: NewStatus
-    ): NetworkResult<ScheduledStatusReply>
-
-    @GET("api/v1/statuses/{id}")
-    suspend fun status(@Path("id") statusId: String): NetworkResult<Status>
-
-    @PUT("api/v1/statuses/{id}")
-    suspend fun editStatus(
-        @Path("id") statusId: String,
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String,
-        @Header("Idempotency-Key") idempotencyKey: String,
-        @Body editedStatus: NewStatus
-    ): NetworkResult<Status>
-
-    @GET("api/v1/statuses/{id}/source")
-    suspend fun statusSource(@Path("id") statusId: String): NetworkResult<StatusSource>
-
-    @GET("api/v1/statuses/{id}/context")
-    suspend fun statusContext(@Path("id") statusId: String): NetworkResult<StatusContext>
-
-    @GET("api/v1/statuses/{id}/history")
-    suspend fun statusEdits(@Path("id") statusId: String): NetworkResult<List<StatusEdit>>
-
-    @GET("api/v1/statuses/{id}/reblogged_by")
-    suspend fun statusRebloggedBy(
-        @Path("id") statusId: String,
-        @Query("max_id") maxId: String?
-    ): Response<List<TimelineAccount>>
-
-    @GET("api/v1/statuses/{id}/favourited_by")
-    suspend fun statusFavouritedBy(
-        @Path("id") statusId: String,
-        @Query("max_id") maxId: String?
-    ): Response<List<TimelineAccount>>
-
-    @DELETE("api/v1/statuses/{id}")
-    suspend fun deleteStatus(
-        @Path("id") statusId: String,
-        @Query("delete_media") deleteMedia: Boolean? = null
-    ): NetworkResult<DeletedStatus>
-
-    @FormUrlEncoded
-    @POST("api/v1/statuses/{id}/reblog")
-    suspend fun reblogStatus(@Path("id") statusId: String, @Field("visibility") visibility: String?): NetworkResult<Status>
-
-    @POST("api/v1/statuses/{id}/unreblog")
-    suspend fun unreblogStatus(@Path("id") statusId: String): NetworkResult<Status>
-
-    @POST("api/v1/statuses/{id}/favourite")
-    suspend fun favouriteStatus(@Path("id") statusId: String): NetworkResult<Status>
-
-    @POST("api/v1/statuses/{id}/unfavourite")
-    suspend fun unfavouriteStatus(@Path("id") statusId: String): NetworkResult<Status>
-
-    @POST("api/v1/statuses/{id}/bookmark")
-    suspend fun bookmarkStatus(@Path("id") statusId: String): NetworkResult<Status>
-
-    @POST("api/v1/statuses/{id}/unbookmark")
-    suspend fun unbookmarkStatus(@Path("id") statusId: String): NetworkResult<Status>
-
-    @POST("api/v1/statuses/{id}/pin")
-    suspend fun pinStatus(@Path("id") statusId: String): NetworkResult<Status>
-
-    @POST("api/v1/statuses/{id}/unpin")
-    suspend fun unpinStatus(@Path("id") statusId: String): NetworkResult<Status>
-
-    @POST("api/v1/statuses/{id}/mute")
-    suspend fun muteConversation(@Path("id") statusId: String): NetworkResult<Status>
-
-    @POST("api/v1/statuses/{id}/unmute")
-    suspend fun unmuteConversation(@Path("id") statusId: String): NetworkResult<Status>
-
-    @GET("api/v1/scheduled_statuses")
-    suspend fun scheduledStatuses(
-        @Query("limit") limit: Int? = null,
-        @Query("max_id") maxId: String? = null
-    ): Response<List<ScheduledStatus>>
-
-    @DELETE("api/v1/scheduled_statuses/{id}")
-    suspend fun deleteScheduledStatus(
-        @Path("id") scheduledStatusId: String
-    ): NetworkResult<Unit>
-
-    @GET("api/v1/accounts/verify_credentials")
-    suspend fun accountVerifyCredentials(
-        @Header(DOMAIN_HEADER) domain: String? = null,
-        @Header("Authorization") auth: String? = null
-    ): NetworkResult<Account>
-
-    @FormUrlEncoded
-    @PATCH("api/v1/accounts/update_credentials")
-    suspend fun accountUpdateSource(
-        @Field("source[privacy]") privacy: String?,
-        @Field("source[sensitive]") sensitive: Boolean?,
-        @Field("source[language]") language: String?,
-        @Field("source[quote_policy]") quotePolicy: String?,
-    ): NetworkResult<Account>
-
-    @Multipart
-    @PATCH("api/v1/accounts/update_credentials")
-    suspend fun accountUpdateCredentials(
-        @Part(value = "display_name") displayName: RequestBody?,
-        @Part(value = "note") note: RequestBody?,
-        @Part(value = "locked") locked: RequestBody?,
-        @Part avatar: MultipartBody.Part?,
-        @Part header: MultipartBody.Part?,
-        @PartMap fields: Map<String, RequestBody>
-    ): NetworkResult<Account>
-
-    @GET("api/v1/accounts/search")
-    suspend fun searchAccounts(
-        @Query("q") query: String,
-        @Query("resolve") resolve: Boolean? = null,
-        @Query("limit") limit: Int? = null,
-        @Query("following") following: Boolean? = null
-    ): NetworkResult<List<TimelineAccount>>
-
-    @GET("api/v1/accounts/{id}")
-    suspend fun account(@Path("id") accountId: String): NetworkResult<Account>
+    private suspend fun <T> response(block: suspend () -> T): Response<T> = try {
+        Response.success(block())
+    } catch (t: Throwable) {
+        Response.error(
+            500,
+            (t.message ?: t.javaClass.simpleName).toResponseBody("text/plain".toMediaTypeOrNull()),
+        )
+    }
 
     /**
-     * Method to fetch statuses for the specified account.
-     * @param accountId ID for account for which statuses will be requested
-     * @param maxId Only statuses with ID less than maxID will be returned
-     * @param sinceId Only statuses with ID bigger than sinceID will be returned
-     * @param limit Limit returned statuses (current API limits: default - 20, max - 40)
-     * @param excludeReplies only return statuses that are no replies
-     * @param onlyMedia only return statuses that have media attached
+     * Wrap a Warpnet `(items, nextCursor)` page as a Retrofit [Response] and
+     * synthesise a Mastodon-style `Link: <url?max_id=CURSOR>; rel="next"`
+     * header when a follow-up cursor exists. NetworkTimelineRemoteMediator
+     * (and peers) extract `max_id` from that header to drive pagination.
      */
-    @GET("api/v1/accounts/{id}/statuses")
-    suspend fun accountStatuses(
-        @Path("id") accountId: String,
-        @Query("max_id") maxId: String? = null,
-        @Query("min_id") minId: String? = null,
-        @Query("since_id") sinceId: String? = null,
-        @Query("limit") limit: Int? = null,
-        @Query("exclude_replies") excludeReplies: Boolean? = null,
-        @Query("exclude_reblogs") excludeReblogs: Boolean? = null,
-        @Query("only_media") onlyMedia: Boolean? = null,
-        @Query("pinned") pinned: Boolean? = null
-    ): Response<List<Status>>
+    private suspend fun <T> paginated(block: suspend () -> Pair<List<T>, String>): Response<List<T>> = try {
+        val (items, nextCursor) = block()
+        val headers = if (nextCursor.isNotEmpty()) {
+            Headers.headersOf(
+                "Link",
+                "<${WarpnetMapper.FAKE_BASE_URL}/?max_id=$nextCursor>; rel=\"next\"",
+            )
+        } else {
+            Headers.headersOf()
+        }
+        Response.success(items, headers)
+    } catch (t: Throwable) {
+        Response.error(
+            500,
+            (t.message ?: t.javaClass.simpleName).toResponseBody("text/plain".toMediaTypeOrNull()),
+        )
+    }
 
-    @GET("api/v1/accounts/{id}/followers")
-    suspend fun accountFollowers(
-        @Path("id") accountId: String,
-        @Query("max_id") maxId: String?
-    ): Response<List<TimelineAccount>>
+    private suspend fun <T> result(block: suspend () -> T): NetworkResult<T> = try {
+        NetworkResult.success(block())
+    } catch (t: Throwable) {
+        NetworkResult.failure(t)
+    }
 
-    @GET("api/v1/accounts/{id}/following")
-    suspend fun accountFollowing(
-        @Path("id") accountId: String,
-        @Query("max_id") maxId: String?
-    ): Response<List<TimelineAccount>>
+    // ---------------------------------------------------------------
+    // instance metadata / custom emojis
+    // ---------------------------------------------------------------
 
-    @FormUrlEncoded
-    @POST("api/v1/accounts/{id}/follow")
-    suspend fun followAccount(
-        @Path("id") accountId: String,
-        @Field("reblogs") showReblogs: Boolean? = null,
-        @Field("notify") notify: Boolean? = null
-    ): NetworkResult<Relationship>
+    suspend fun getCustomEmojis(): NetworkResult<List<Emoji>> = NetworkResult.success(emptyList())
 
-    @POST("api/v1/accounts/{id}/unfollow")
-    suspend fun unfollowAccount(@Path("id") accountId: String): NetworkResult<Relationship>
+    /**
+     * Warpnet nodes expose [site.warpnet.transport.ProtocolIds.PUBLIC_GET_INFO]
+     * which returns libp2p-peer-level metadata (peer id, protocols, start
+     * time) — nothing that lines up with Mastodon's instance descriptor.
+     * Return a static Warpnet-shaped stub so onboarding / compose / settings
+     * screens have the fields they gate on.
+     */
+    suspend fun getInstanceV1(): NetworkResult<InstanceV1> = NetworkResult.success(
+        InstanceV1(
+            uri = PLACEHOLDER_DOMAIN,
+            version = WARPNET_INSTANCE_VERSION,
+            maxTootChars = WARPNET_MAX_TWEET_CHARS,
+            maxMediaAttachments = 0,
+            uploadLimit = 0,
+            configuration = InstanceConfiguration(
+                statuses = StatusConfiguration(
+                    maxCharacters = WARPNET_MAX_TWEET_CHARS,
+                    maxMediaAttachments = 0,
+                    charactersReservedPerUrl = 23,
+                ),
+            ),
+        ),
+    )
 
-    @POST("api/v1/accounts/{id}/block")
-    suspend fun blockAccount(@Path("id") accountId: String): NetworkResult<Relationship>
+    suspend fun getInstance(): NetworkResult<Instance> = NetworkResult.success(
+        Instance(
+            domain = PLACEHOLDER_DOMAIN,
+            version = WARPNET_INSTANCE_VERSION,
+            configuration = Instance.Configuration(
+                statuses = Instance.Configuration.Statuses(
+                    maxCharacters = WARPNET_MAX_TWEET_CHARS,
+                    maxMediaAttachments = 0,
+                    charactersReservedPerUrl = 23,
+                ),
+            ),
+        ),
+    )
 
-    @POST("api/v1/accounts/{id}/unblock")
-    suspend fun unblockAccount(@Path("id") accountId: String): NetworkResult<Relationship>
+    suspend fun getInstanceRules(domain: String? = null): NetworkResult<List<Instance.Rule>> =
+        NetworkResult.success(emptyList())
 
-    @FormUrlEncoded
-    @POST("api/v1/accounts/{id}/mute")
-    suspend fun muteAccount(
-        @Path("id") accountId: String,
-        @Field("notifications") notifications: Boolean? = null,
-        @Field("duration") duration: Int? = null
-    ): NetworkResult<Relationship>
+    // ---------------------------------------------------------------
+    // filters (no Warpnet equivalent — server-side filtering doesn't exist)
+    // ---------------------------------------------------------------
 
-    @POST("api/v1/accounts/{id}/unmute")
-    suspend fun unmuteAccount(@Path("id") accountId: String): NetworkResult<Relationship>
-
-    @GET("api/v1/accounts/relationships")
-    suspend fun relationships(
-        @Query("id[]") accountIds: List<String>
-    ): NetworkResult<List<Relationship>>
-
-    @POST("api/v1/pleroma/accounts/{id}/subscribe")
-    suspend fun subscribeAccount(@Path("id") accountId: String): NetworkResult<Relationship>
-
-    @POST("api/v1/pleroma/accounts/{id}/unsubscribe")
-    suspend fun unsubscribeAccount(@Path("id") accountId: String): NetworkResult<Relationship>
-
-    @GET("api/v1/blocks")
-    suspend fun blocks(@Query("max_id") maxId: String? = null): Response<List<TimelineAccount>>
-
-    @GET("api/v1/mutes")
-    suspend fun mutes(@Query("max_id") maxId: String? = null): Response<List<TimelineAccount>>
-
-    @GET("api/v1/domain_blocks")
-    suspend fun domainBlocks(
-        @Query("max_id") maxId: String? = null,
-        @Query("since_id") sinceId: String? = null,
-        @Query("limit") limit: Int? = null
-    ): Response<List<String>>
-
-    @FormUrlEncoded
-    @POST("api/v1/domain_blocks")
-    suspend fun blockDomain(@Field("domain") domain: String): NetworkResult<Unit>
-
-    @FormUrlEncoded
-    // @DELETE doesn't support fields
-    @HTTP(method = "DELETE", path = "api/v1/domain_blocks", hasBody = true)
-    suspend fun unblockDomain(@Field("domain") domain: String): NetworkResult<Unit>
-
-    @GET("api/v1/favourites")
-    suspend fun favourites(
-        @Query("max_id") maxId: String?,
-        @Query("min_id") minId: String? = null,
-        @Query("since_id") sinceId: String?,
-        @Query("limit") limit: Int?
-    ): Response<List<Status>>
-
-    @GET("api/v1/bookmarks")
-    suspend fun bookmarks(
-        @Query("max_id") maxId: String?,
-        @Query("min_id") minId: String? = null,
-        @Query("since_id") sinceId: String?,
-        @Query("limit") limit: Int?
-    ): Response<List<Status>>
-
-    @GET("api/v1/follow_requests")
-    suspend fun followRequests(@Query("max_id") maxId: String?): Response<List<TimelineAccount>>
-
-    @POST("api/v1/follow_requests/{id}/authorize")
-    suspend fun authorizeFollowRequest(@Path("id") accountId: String): NetworkResult<Relationship>
-
-    @POST("api/v1/follow_requests/{id}/reject")
-    suspend fun rejectFollowRequest(@Path("id") accountId: String): NetworkResult<Relationship>
-
-    @FormUrlEncoded
-    @POST("api/v1/apps")
-    suspend fun authenticateApp(
-        @Header(DOMAIN_HEADER) domain: String,
-        @Field("client_name") clientName: String,
-        @Field("redirect_uris") redirectUris: String,
-        @Field("scopes") scopes: String,
-        @Field("website") website: String
-    ): NetworkResult<AppCredentials>
-
-    @FormUrlEncoded
-    @POST("oauth/token")
-    suspend fun fetchOAuthToken(
-        @Header(DOMAIN_HEADER) domain: String,
-        @Field("client_id") clientId: String,
-        @Field("client_secret") clientSecret: String,
-        @Field("redirect_uri") redirectUri: String,
-        @Field("code") code: String,
-        @Field("grant_type") grantType: String
-    ): NetworkResult<AccessToken>
-
-    @FormUrlEncoded
-    @POST("oauth/revoke")
-    suspend fun revokeOAuthToken(
-        @Field("client_id") clientId: String,
-        @Field("client_secret") clientSecret: String,
-        @Field("token") token: String
-    ): NetworkResult<Unit>
-
-    @GET("/api/v1/lists")
-    suspend fun getLists(): NetworkResult<List<MastoList>>
-
-    @GET("/api/v1/accounts/{id}/lists")
-    suspend fun getListsIncludesAccount(
-        @Path("id") accountId: String
-    ): NetworkResult<List<MastoList>>
-
-    @FormUrlEncoded
-    @POST("api/v1/lists")
-    suspend fun createList(
-        @Field("title") title: String,
-        @Field("exclusive") exclusive: Boolean?,
-        @Field("replies_policy") replyPolicy: String
-    ): NetworkResult<MastoList>
-
-    @FormUrlEncoded
-    @PUT("api/v1/lists/{listId}")
-    suspend fun updateList(
-        @Path("listId") listId: String,
-        @Field("title") title: String,
-        @Field("exclusive") exclusive: Boolean?,
-        @Field("replies_policy") replyPolicy: String
-    ): NetworkResult<MastoList>
-
-    @DELETE("api/v1/lists/{listId}")
-    suspend fun deleteList(@Path("listId") listId: String): NetworkResult<Unit>
-
-    @GET("api/v1/lists/{listId}/accounts")
-    suspend fun getAccountsInList(
-        @Path("listId") listId: String,
-        @Query("limit") limit: Int
-    ): NetworkResult<List<TimelineAccount>>
-
-    @FormUrlEncoded
-    // @DELETE doesn't support fields
-    @HTTP(method = "DELETE", path = "api/v1/lists/{listId}/accounts", hasBody = true)
-    suspend fun deleteAccountFromList(
-        @Path("listId") listId: String,
-        @Field("account_ids[]") accountIds: List<String>
-    ): NetworkResult<Unit>
-
-    @FormUrlEncoded
-    @POST("api/v1/lists/{listId}/accounts")
-    suspend fun addAccountToList(
-        @Path("listId") listId: String,
-        @Field("account_ids[]") accountIds: List<String>
-    ): NetworkResult<Unit>
-
-    @GET("/api/v1/conversations")
-    suspend fun getConversations(
-        @Query("max_id") maxId: String? = null,
-        @Query("limit") limit: Int? = null
-    ): Response<List<Conversation>>
-
-    @DELETE("/api/v1/conversations/{id}")
-    suspend fun deleteConversation(@Path("id") conversationId: String): NetworkResult<Unit>
-
-    @FormUrlEncoded
-    @POST("api/v2/filters")
+    suspend fun getFilter(filterId: String): NetworkResult<Filter> = stubFailure("getFilter")
+    suspend fun getFilters(): NetworkResult<List<Filter>> = NetworkResult.success(emptyList())
     suspend fun createFilter(
-        @Field("title") title: String,
-        @Field("context[]") context: List<Filter.Kind>,
-        @Field("filter_action") filterAction: Filter.Action,
-        @Field("expires_in") expiresIn: FilterExpiration?
-    ): NetworkResult<Filter>
-
-    @FormUrlEncoded
-    @PUT("api/v2/filters/{id}")
+        title: String,
+        context: List<Filter.Kind>,
+        filterAction: Filter.Action,
+        expiresIn: FilterExpiration?,
+    ): NetworkResult<Filter> = stubFailure("createFilter")
     suspend fun updateFilter(
-        @Path("id") id: String,
-        @Field("title") title: String? = null,
-        @Field("context[]") context: List<Filter.Kind>? = null,
-        @Field("filter_action") filterAction: Filter.Action? = null,
-        @Field("expires_in") expires: FilterExpiration? = null
-    ): NetworkResult<Filter>
-
-    @DELETE("api/v2/filters/{id}")
-    suspend fun deleteFilter(@Path("id") id: String): NetworkResult<Unit>
-
-    @FormUrlEncoded
-    @POST("api/v2/filters/{filterId}/keywords")
+        id: String,
+        title: String? = null,
+        context: List<Filter.Kind>? = null,
+        filterAction: Filter.Action? = null,
+        expires: FilterExpiration? = null,
+    ): NetworkResult<Filter> = stubFailure("updateFilter")
+    suspend fun deleteFilter(id: String): NetworkResult<Unit> = NetworkResult.success(Unit)
     suspend fun addFilterKeyword(
-        @Path("filterId") filterId: String,
-        @Field("keyword") keyword: String,
-        @Field("whole_word") wholeWord: Boolean
-    ): NetworkResult<FilterKeyword>
-
-    @FormUrlEncoded
-    @PUT("api/v2/filters/keywords/{keywordId}")
+        filterId: String,
+        keyword: String,
+        wholeWord: Boolean,
+    ): NetworkResult<FilterKeyword> = stubFailure("addFilterKeyword")
     suspend fun updateFilterKeyword(
-        @Path("keywordId") keywordId: String,
-        @Field("keyword") keyword: String,
-        @Field("whole_word") wholeWord: Boolean
-    ): NetworkResult<FilterKeyword>
+        keywordId: String,
+        keyword: String,
+        wholeWord: Boolean,
+    ): NetworkResult<FilterKeyword> = stubFailure("updateFilterKeyword")
+    suspend fun deleteFilterKeyword(keywordId: String): NetworkResult<Unit> = NetworkResult.success(Unit)
 
-    @DELETE("api/v2/filters/keywords/{keywordId}")
-    suspend fun deleteFilterKeyword(
-        @Path("keywordId") keywordId: String
-    ): NetworkResult<Unit>
+    // ---------------------------------------------------------------
+    // timelines
+    // ---------------------------------------------------------------
 
-    @FormUrlEncoded
-    @POST("api/v1/polls/{id}/votes")
-    suspend fun voteInPoll(
-        @Path("id") id: String,
-        @Field("choices[]") choices: List<Int>
-    ): NetworkResult<Poll>
+    suspend fun homeTimeline(
+        maxId: String? = null,
+        minId: String? = null,
+        sinceId: String? = null,
+        limit: Int? = null,
+    ): Response<List<Status>> = paginated {
+        warpnet.getHomeTimeline(cursor = maxId.orEmpty(), limit = limit ?: 40)
+    }
 
-    @GET("api/v1/announcements")
-    suspend fun announcements(): NetworkResult<List<Announcement>>
+    /**
+     * Mastodon's public timeline has no direct Warpnet equivalent. Fall
+     * back to the active account's own feed so the UI stays populated.
+     */
+    suspend fun publicTimeline(
+        local: Boolean? = null,
+        maxId: String? = null,
+        minId: String? = null,
+        sinceId: String? = null,
+        limit: Int? = null,
+    ): Response<List<Status>> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubList()
+        return paginated {
+            warpnet.getUserTimeline(userId = userId, cursor = maxId.orEmpty(), limit = limit ?: 40)
+        }
+    }
 
-    @POST("api/v1/announcements/{id}/dismiss")
-    suspend fun dismissAnnouncement(@Path("id") announcementId: String): NetworkResult<Unit>
+    suspend fun hashtagTimeline(
+        hashtag: String,
+        any: List<String>?,
+        local: Boolean?,
+        maxId: String?,
+        minId: String? = null,
+        sinceId: String?,
+        limit: Int?,
+    ): Response<List<Status>> = stubList()
 
-    @PUT("api/v1/announcements/{id}/reactions/{name}")
+    suspend fun listTimeline(
+        listId: String,
+        maxId: String?,
+        minId: String? = null,
+        sinceId: String?,
+        limit: Int?,
+    ): Response<List<Status>> = stubList()
+
+    // ---------------------------------------------------------------
+    // notifications
+    // ---------------------------------------------------------------
+
+    suspend fun notifications(
+        maxId: String? = null,
+        sinceId: String? = null,
+        minId: String? = null,
+        limit: Int? = null,
+        excludes: Set<Notification.Type>? = null,
+        accountId: String? = null,
+    ): Response<List<Notification>> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubList()
+        return paginated {
+            warpnet.getNotifications(userId = userId, cursor = maxId.orEmpty(), limit = limit ?: 40)
+        }
+    }
+
+    suspend fun notification(id: String): Response<Notification> = stubError()
+
+    suspend fun markersWithAuth(
+        auth: String,
+        domain: String,
+        timelines: List<String>,
+    ): Map<String, Marker> = emptyMap()
+
+    suspend fun updateMarkersWithAuth(
+        auth: String,
+        domain: String,
+        homeLastReadId: String? = null,
+        notificationsLastReadId: String? = null,
+    ): NetworkResult<Unit> = NetworkResult.success(Unit)
+
+    suspend fun notificationsWithAuth(
+        auth: String,
+        domain: String,
+        minId: String?,
+    ): Response<List<Notification>> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubList()
+        return paginated {
+            warpnet.getNotifications(userId = userId, cursor = minId.orEmpty(), limit = 40)
+        }
+    }
+
+    suspend fun clearNotifications(): NetworkResult<Unit> = NetworkResult.success(Unit)
+
+    // ---------------------------------------------------------------
+    // media
+    // ---------------------------------------------------------------
+
+    suspend fun updateMedia(
+        mediaId: String,
+        description: String?,
+        focus: String?,
+    ): NetworkResult<Attachment> = stubFailure("updateMedia")
+
+    suspend fun getMedia(mediaId: String): Response<MediaUploadResult> = stubError()
+
+    // ---------------------------------------------------------------
+    // statuses (CRUD + interactions)
+    // ---------------------------------------------------------------
+
+    suspend fun createStatus(
+        auth: String,
+        domain: String,
+        idempotencyKey: String,
+        status: NewStatus,
+    ): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("createStatus")
+        return result {
+            warpnet.postStatus(
+                text = status.status,
+                authorUserId = active.accountId,
+                authorUsername = active.username,
+                parentId = status.inReplyToId,
+            )
+        }
+    }
+
+    suspend fun createScheduledStatus(
+        auth: String,
+        domain: String,
+        idempotencyKey: String,
+        status: NewStatus,
+    ): NetworkResult<ScheduledStatusReply> = stubFailure("createScheduledStatus")
+
+    suspend fun status(statusId: String): NetworkResult<Status> = stubFailure("status")
+
+    suspend fun editStatus(
+        statusId: String,
+        auth: String,
+        domain: String,
+        idempotencyKey: String,
+        editedStatus: NewStatus,
+    ): NetworkResult<Status> = stubFailure("editStatus")
+
+    suspend fun statusSource(statusId: String): NetworkResult<StatusSource> = stubFailure("statusSource")
+
+    suspend fun statusContext(statusId: String): NetworkResult<StatusContext> = result {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        StatusContext(
+            ancestors = warpnet.getAncestors(tweetId = statusId, userId = userId),
+            descendants = warpnet.getReplies(rootId = statusId),
+        )
+    }
+
+    suspend fun statusEdits(statusId: String): NetworkResult<List<StatusEdit>> =
+        NetworkResult.success(emptyList())
+
+    suspend fun statusRebloggedBy(
+        statusId: String,
+        maxId: String?,
+    ): Response<List<TimelineAccount>> = stubList()
+
+    suspend fun statusFavouritedBy(
+        statusId: String,
+        maxId: String?,
+    ): Response<List<TimelineAccount>> = stubList()
+
+    suspend fun deleteStatus(
+        statusId: String,
+        deleteMedia: Boolean? = null,
+    ): NetworkResult<DeletedStatus> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubFailure("deleteStatus")
+        return result {
+            warpnet.deleteStatus(tweetId = statusId, userId = userId)
+            // Warpnet's delete returns no body; the Mastodon shape expects a
+            // draftable DeletedStatus. Hand back an empty one — callers use
+            // `DeletedStatus.isEmpty` to skip reopening a draft.
+            DeletedStatus(
+                text = null,
+                inReplyToId = null,
+                spoilerText = "",
+                visibility = Status.Visibility.PUBLIC,
+                sensitive = false,
+                attachments = emptyList(),
+                poll = null,
+                createdAt = java.util.Date(),
+                language = null,
+            )
+        }
+    }
+
+    suspend fun reblogStatus(
+        statusId: String,
+        visibility: String?,
+    ): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("reblogStatus")
+        return result {
+            warpnet.reblogStatus(
+                tweetId = statusId,
+                retweeterId = active.accountId,
+                retweeterUsername = active.username,
+            )
+            warpnet.getStatus(tweetId = statusId, userId = active.accountId)
+        }
+    }
+
+    suspend fun unreblogStatus(statusId: String): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("unreblogStatus")
+        return result {
+            warpnet.unreblogStatus(tweetId = statusId, retweeterId = active.accountId)
+            warpnet.getStatus(tweetId = statusId, userId = active.accountId)
+        }
+    }
+
+    suspend fun favouriteStatus(statusId: String): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("favouriteStatus")
+        return result {
+            warpnet.favouriteStatus(tweetId = statusId, userId = active.accountId)
+            warpnet.getStatus(tweetId = statusId, userId = active.accountId)
+        }
+    }
+
+    suspend fun unfavouriteStatus(statusId: String): NetworkResult<Status> {
+        val active = accountManager.activeAccount ?: return stubFailure("unfavouriteStatus")
+        return result {
+            warpnet.unfavouriteStatus(tweetId = statusId, userId = active.accountId)
+            warpnet.getStatus(tweetId = statusId, userId = active.accountId)
+        }
+    }
+
+    suspend fun bookmarkStatus(statusId: String): NetworkResult<Status> = stubFailure("bookmarkStatus")
+
+    suspend fun unbookmarkStatus(statusId: String): NetworkResult<Status> = stubFailure("unbookmarkStatus")
+
+    suspend fun pinStatus(statusId: String): NetworkResult<Status> = stubFailure("pinStatus")
+
+    suspend fun unpinStatus(statusId: String): NetworkResult<Status> = stubFailure("unpinStatus")
+
+    suspend fun muteConversation(statusId: String): NetworkResult<Status> = stubFailure("muteConversation")
+
+    suspend fun unmuteConversation(statusId: String): NetworkResult<Status> = stubFailure("unmuteConversation")
+
+    suspend fun scheduledStatuses(
+        limit: Int? = null,
+        maxId: String? = null,
+    ): Response<List<ScheduledStatus>> = stubList()
+
+    suspend fun deleteScheduledStatus(scheduledStatusId: String): NetworkResult<Unit> =
+        NetworkResult.success(Unit)
+
+    // ---------------------------------------------------------------
+    // accounts
+    // ---------------------------------------------------------------
+
+    suspend fun accountVerifyCredentials(
+        domain: String? = null,
+        auth: String? = null,
+    ): NetworkResult<Account> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubFailure("accountVerifyCredentials")
+        return result { warpnet.getAccount(userId) }
+    }
+
+    suspend fun accountUpdateSource(
+        privacy: String?,
+        sensitive: Boolean?,
+        language: String?,
+        quotePolicy: String?,
+    ): NetworkResult<Account> = stubFailure("accountUpdateSource")
+
+    suspend fun accountUpdateCredentials(
+        displayName: RequestBody?,
+        note: RequestBody?,
+        locked: RequestBody?,
+        avatar: MultipartBody.Part?,
+        header: MultipartBody.Part?,
+        fields: Map<String, RequestBody>,
+    ): NetworkResult<Account> = stubFailure("accountUpdateCredentials")
+
+    /**
+     * Warpnet has no server-side text search, so we page through
+     * [WarpnetRepository.listUsers] for the caller's viewpoint and filter
+     * usernames/display names client-side. Cheap enough for short queries;
+     * when the catalogue grows we should push this server-side.
+     */
+    suspend fun searchAccounts(
+        query: String,
+        resolve: Boolean? = null,
+        limit: Int? = null,
+        following: Boolean? = null,
+    ): NetworkResult<List<TimelineAccount>> {
+        val me = accountManager.activeAccount?.accountId.orEmpty()
+        if (me.isEmpty() || query.isBlank()) return NetworkResult.success(emptyList())
+        return result {
+            val (users, _) = warpnet.listUsers(requesterUserId = me, limit = (limit ?: 40).coerceAtLeast(1))
+            val needle = query.trim().lowercase()
+            users.filter { acc ->
+                acc.username.lowercase().contains(needle) ||
+                    acc.displayName.orEmpty().lowercase().contains(needle)
+            }
+        }
+    }
+
+    suspend fun account(accountId: String): NetworkResult<Account> = result {
+        warpnet.getAccount(accountId)
+    }
+
+    suspend fun accountStatuses(
+        accountId: String,
+        maxId: String? = null,
+        minId: String? = null,
+        sinceId: String? = null,
+        limit: Int? = null,
+        excludeReplies: Boolean? = null,
+        excludeReblogs: Boolean? = null,
+        onlyMedia: Boolean? = null,
+        pinned: Boolean? = null,
+    ): Response<List<Status>> = paginated {
+        warpnet.getUserTimeline(userId = accountId, cursor = maxId.orEmpty(), limit = limit ?: 40)
+    }
+
+    suspend fun accountFollowers(
+        accountId: String,
+        maxId: String?,
+    ): Response<List<TimelineAccount>> = paginated {
+        warpnet.getFollowers(userId = accountId, cursor = maxId.orEmpty(), limit = 40)
+    }
+
+    suspend fun accountFollowing(
+        accountId: String,
+        maxId: String?,
+    ): Response<List<TimelineAccount>> = paginated {
+        warpnet.getFollowings(userId = accountId, cursor = maxId.orEmpty(), limit = 40)
+    }
+
+    suspend fun followAccount(
+        accountId: String,
+        showReblogs: Boolean? = null,
+        notify: Boolean? = null,
+    ): NetworkResult<Relationship> {
+        val me = accountManager.activeAccount?.accountId.orEmpty()
+        if (me.isEmpty()) return stubFailure("followAccount")
+        return result { warpnet.followAccount(followerId = me, followeeId = accountId) }
+    }
+
+    suspend fun unfollowAccount(accountId: String): NetworkResult<Relationship> {
+        val me = accountManager.activeAccount?.accountId.orEmpty()
+        if (me.isEmpty()) return stubFailure("unfollowAccount")
+        return result { warpnet.unfollowAccount(followerId = me, followeeId = accountId) }
+    }
+
+    suspend fun blockAccount(accountId: String): NetworkResult<Relationship> = stubFailure("blockAccount")
+
+    suspend fun unblockAccount(accountId: String): NetworkResult<Relationship> = stubFailure("unblockAccount")
+
+    suspend fun muteAccount(
+        accountId: String,
+        notifications: Boolean? = null,
+        duration: Int? = null,
+    ): NetworkResult<Relationship> = stubFailure("muteAccount")
+
+    suspend fun unmuteAccount(accountId: String): NetworkResult<Relationship> = stubFailure("unmuteAccount")
+
+    suspend fun relationships(accountIds: List<String>): NetworkResult<List<Relationship>> = result {
+        accountIds.map { warpnet.relationshipFor(it) }
+    }
+
+    suspend fun subscribeAccount(accountId: String): NetworkResult<Relationship> = stubFailure("subscribeAccount")
+
+    suspend fun unsubscribeAccount(accountId: String): NetworkResult<Relationship> = stubFailure("unsubscribeAccount")
+
+    suspend fun blocks(maxId: String? = null): Response<List<TimelineAccount>> = stubList()
+    suspend fun mutes(maxId: String? = null): Response<List<TimelineAccount>> = stubList()
+
+    suspend fun domainBlocks(
+        maxId: String? = null,
+        sinceId: String? = null,
+        limit: Int? = null,
+    ): Response<List<String>> = stubList()
+
+    suspend fun blockDomain(domain: String): NetworkResult<Unit> = NetworkResult.success(Unit)
+    suspend fun unblockDomain(domain: String): NetworkResult<Unit> = NetworkResult.success(Unit)
+
+    suspend fun favourites(
+        maxId: String?,
+        minId: String? = null,
+        sinceId: String?,
+        limit: Int?,
+    ): Response<List<Status>> = stubList()
+
+    suspend fun bookmarks(
+        maxId: String?,
+        minId: String? = null,
+        sinceId: String?,
+        limit: Int?,
+    ): Response<List<Status>> = stubList()
+
+    suspend fun followRequests(maxId: String?): Response<List<TimelineAccount>> = stubList()
+
+    suspend fun authorizeFollowRequest(accountId: String): NetworkResult<Relationship> =
+        stubFailure("authorizeFollowRequest")
+
+    suspend fun rejectFollowRequest(accountId: String): NetworkResult<Relationship> =
+        stubFailure("rejectFollowRequest")
+
+    // ---------------------------------------------------------------
+    // oauth (kept for symmetry — Warpnet pairing is handled elsewhere)
+    // ---------------------------------------------------------------
+
+    suspend fun authenticateApp(
+        domain: String,
+        clientName: String,
+        redirectUris: String,
+        scopes: String,
+        website: String,
+    ): NetworkResult<AppCredentials> = stubFailure("authenticateApp")
+
+    suspend fun fetchOAuthToken(
+        domain: String,
+        clientId: String,
+        clientSecret: String,
+        redirectUri: String,
+        code: String,
+        grantType: String,
+    ): NetworkResult<AccessToken> = stubFailure("fetchOAuthToken")
+
+    suspend fun revokeOAuthToken(
+        clientId: String,
+        clientSecret: String,
+        token: String,
+    ): NetworkResult<Unit> = NetworkResult.success(Unit)
+
+    // ---------------------------------------------------------------
+    // lists
+    // ---------------------------------------------------------------
+
+    suspend fun getLists(): NetworkResult<List<MastoList>> = NetworkResult.success(emptyList())
+
+    suspend fun getListsIncludesAccount(accountId: String): NetworkResult<List<MastoList>> =
+        NetworkResult.success(emptyList())
+
+    suspend fun createList(
+        title: String,
+        exclusive: Boolean?,
+        replyPolicy: String,
+    ): NetworkResult<MastoList> = stubFailure("createList")
+
+    suspend fun updateList(
+        listId: String,
+        title: String,
+        exclusive: Boolean?,
+        replyPolicy: String,
+    ): NetworkResult<MastoList> = stubFailure("updateList")
+
+    suspend fun deleteList(listId: String): NetworkResult<Unit> = NetworkResult.success(Unit)
+
+    suspend fun getAccountsInList(
+        listId: String,
+        limit: Int,
+    ): NetworkResult<List<TimelineAccount>> = NetworkResult.success(emptyList())
+
+    suspend fun deleteAccountFromList(
+        listId: String,
+        accountIds: List<String>,
+    ): NetworkResult<Unit> = NetworkResult.success(Unit)
+
+    suspend fun addAccountToList(
+        listId: String,
+        accountIds: List<String>,
+    ): NetworkResult<Unit> = NetworkResult.success(Unit)
+
+    // ---------------------------------------------------------------
+    // conversations (Mastodon DMs; Warpnet chat has different shape)
+    // ---------------------------------------------------------------
+
+    suspend fun getConversations(
+        maxId: String? = null,
+        limit: Int? = null,
+    ): Response<List<Conversation>> = stubList()
+
+    suspend fun deleteConversation(conversationId: String): NetworkResult<Unit> =
+        NetworkResult.success(Unit)
+
+    // ---------------------------------------------------------------
+    // polls, announcements, reports, search
+    // ---------------------------------------------------------------
+
+    suspend fun voteInPoll(id: String, choices: List<Int>): NetworkResult<Poll> = stubFailure("voteInPoll")
+
+    suspend fun announcements(): NetworkResult<List<Announcement>> = NetworkResult.success(emptyList())
+
+    suspend fun dismissAnnouncement(announcementId: String): NetworkResult<Unit> =
+        NetworkResult.success(Unit)
+
     suspend fun addAnnouncementReaction(
-        @Path("id") announcementId: String,
-        @Path("name") name: String
-    ): NetworkResult<Unit>
+        announcementId: String,
+        name: String,
+    ): NetworkResult<Unit> = NetworkResult.success(Unit)
 
-    @DELETE("api/v1/announcements/{id}/reactions/{name}")
     suspend fun removeAnnouncementReaction(
-        @Path("id") announcementId: String,
-        @Path("name") name: String
-    ): NetworkResult<Unit>
+        announcementId: String,
+        name: String,
+    ): NetworkResult<Unit> = NetworkResult.success(Unit)
 
-    @FormUrlEncoded
-    @POST("api/v1/reports")
     suspend fun report(
-        @Field("account_id") accountId: String,
-        @Field("status_ids[]") statusIds: Set<String>,
-        @Field("comment") comment: String,
-        @Field("forward") forward: Boolean?,
-        @Field("category") category: String?,
-        @Field("rule_ids[]") ruleIds: Set<String>?,
-    ): NetworkResult<Unit>
+        accountId: String,
+        statusIds: Set<String>,
+        comment: String,
+        forward: Boolean?,
+        category: String?,
+        ruleIds: Set<String>?,
+    ): NetworkResult<Unit> = NetworkResult.success(Unit)
 
-    @GET("api/v2/search")
     suspend fun search(
-        @Query("q") query: String?,
-        @Query("type") type: String? = null,
-        @Query("resolve") resolve: Boolean? = null,
-        @Query("limit") limit: Int? = null,
-        @Query("offset") offset: Int? = null,
-        @Query("following") following: Boolean? = null
-    ): NetworkResult<SearchResult>
+        query: String?,
+        type: String? = null,
+        resolve: Boolean? = null,
+        limit: Int? = null,
+        offset: Int? = null,
+        following: Boolean? = null,
+    ): NetworkResult<SearchResult> = stubFailure("search")
 
-    @FormUrlEncoded
-    @POST("api/v1/accounts/{id}/note")
     suspend fun updateAccountNote(
-        @Path("id") accountId: String,
-        @Field("comment") note: String
-    ): NetworkResult<Relationship>
+        accountId: String,
+        note: String,
+    ): NetworkResult<Relationship> = stubFailure("updateAccountNote")
 
-    @GET("api/v1/push/subscription")
+    // ---------------------------------------------------------------
+    // push subscription
+    // ---------------------------------------------------------------
+
     suspend fun pushNotificationSubscription(
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String
-    ): NetworkResult<NotificationSubscribeResult>
+        auth: String,
+        domain: String,
+    ): NetworkResult<NotificationSubscribeResult> = stubFailure("pushNotificationSubscription")
 
-    @FormUrlEncoded
-    @POST("api/v1/push/subscription")
     suspend fun subscribePushNotifications(
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String,
-        @Field("subscription[standard]") standard: Boolean,
-        @Field("subscription[endpoint]") endpoint: String,
-        @Field("subscription[keys][p256dh]") keysP256DH: String,
-        @Field("subscription[keys][auth]") keysAuth: String,
-        // The "data[alerts][]" fields to enable / disable notifications
-        // Should be generated dynamically from all the available notification
-        // types defined in [com.keylesspalace.tusky.entities.Notification.Types]
-        @FieldMap data: Map<String, Boolean>
-    ): NetworkResult<NotificationSubscribeResult>
+        auth: String,
+        domain: String,
+        standard: Boolean,
+        endpoint: String,
+        keysP256DH: String,
+        keysAuth: String,
+        data: Map<String, Boolean>,
+    ): NetworkResult<NotificationSubscribeResult> = stubFailure("subscribePushNotifications")
 
-    @FormUrlEncoded
-    @PUT("api/v1/push/subscription")
     suspend fun updatePushNotificationSubscription(
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String,
-        @FieldMap data: Map<String, Boolean>
-    ): NetworkResult<NotificationSubscribeResult>
+        auth: String,
+        domain: String,
+        data: Map<String, Boolean>,
+    ): NetworkResult<NotificationSubscribeResult> = stubFailure("updatePushNotificationSubscription")
 
-    @DELETE("api/v1/push/subscription")
     suspend fun unsubscribePushNotifications(
-        @Header("Authorization") auth: String,
-        @Header(DOMAIN_HEADER) domain: String
-    ): NetworkResult<Unit>
+        auth: String,
+        domain: String,
+    ): NetworkResult<Unit> = NetworkResult.success(Unit)
 
-    @GET("api/v1/tags/{name}")
-    suspend fun tag(@Path("name") name: String): NetworkResult<HashTag>
+    // ---------------------------------------------------------------
+    // tags + trends
+    // ---------------------------------------------------------------
 
-    @GET("api/v1/followed_tags")
+    suspend fun tag(name: String): NetworkResult<HashTag> = stubFailure("tag")
+
     suspend fun followedTags(
-        @Query("min_id") minId: String? = null,
-        @Query("since_id") sinceId: String? = null,
-        @Query("max_id") maxId: String? = null,
-        @Query("limit") limit: Int? = null
-    ): Response<List<HashTag>>
+        minId: String? = null,
+        sinceId: String? = null,
+        maxId: String? = null,
+        limit: Int? = null,
+    ): Response<List<HashTag>> = stubList()
 
-    @POST("api/v1/tags/{name}/follow")
-    suspend fun followTag(@Path("name") name: String): NetworkResult<HashTag>
+    suspend fun followTag(name: String): NetworkResult<HashTag> = stubFailure("followTag")
+    suspend fun unfollowTag(name: String): NetworkResult<HashTag> = stubFailure("unfollowTag")
 
-    @POST("api/v1/tags/{name}/unfollow")
-    suspend fun unfollowTag(@Path("name") name: String): NetworkResult<HashTag>
+    suspend fun trendingTags(): NetworkResult<List<TrendingTag>> = NetworkResult.success(emptyList())
 
-    @GET("api/v1/trends/tags")
-    suspend fun trendingTags(): NetworkResult<List<TrendingTag>>
-
-    @GET("api/v1/trends/statuses")
     suspend fun trendingStatuses(
-        @Query("limit") limit: Int? = null,
-        @Query("offset") offset: String? = null
-    ): Response<List<Status>>
+        limit: Int? = null,
+        offset: String? = null,
+    ): Response<List<Status>> = stubList()
 
-    @GET("api/v1/statuses/{id}/quotes")
     suspend fun quotingStatuses(
-        @Path("id") statusId: String,
-        @Query("limit") limit: Int? = null,
-        @Query("offset") offset: String? = null
-    ): Response<List<Status>>
+        statusId: String,
+        limit: Int? = null,
+        offset: String? = null,
+    ): Response<List<Status>> = stubList()
 
-    @FormUrlEncoded
-    @POST("api/v1/statuses/{id}/translate")
     suspend fun translate(
-        @Path("id") statusId: String,
-        @Field("lang") targetLanguage: String?
-    ): NetworkResult<Translation>
+        statusId: String,
+        targetLanguage: String?,
+    ): NetworkResult<Translation> = stubFailure("translate")
 
-    @GET("api/v2/notifications/policy")
-    suspend fun notificationPolicy(): NetworkResult<NotificationPolicy>
+    // ---------------------------------------------------------------
+    // notification policy + requests
+    // ---------------------------------------------------------------
 
-    @FormUrlEncoded
-    @PATCH("api/v2/notifications/policy")
+    suspend fun notificationPolicy(): NetworkResult<NotificationPolicy> = stubFailure("notificationPolicy")
+
     suspend fun updateNotificationPolicy(
-        @Field("for_not_following") forNotFollowing: String?,
-        @Field("for_not_followers") forNotFollowers: String?,
-        @Field("for_new_accounts") forNewAccounts: String?,
-        @Field("for_private_mentions") forPrivateMentions: String?,
-        @Field("for_limited_accounts") forLimitedAccounts: String?
-    ): NetworkResult<NotificationPolicy>
+        forNotFollowing: String?,
+        forNotFollowers: String?,
+        forNewAccounts: String?,
+        forPrivateMentions: String?,
+        forLimitedAccounts: String?,
+    ): NetworkResult<NotificationPolicy> = stubFailure("updateNotificationPolicy")
 
-    @GET("api/v1/notifications/requests")
     suspend fun getNotificationRequests(
-        @Query("max_id") maxId: String? = null,
-        @Query("min_id") minId: String? = null,
-        @Query("since_id") sinceId: String? = null,
-        @Query("limit") limit: Int? = null
-    ): Response<List<NotificationRequest>>
+        maxId: String? = null,
+        minId: String? = null,
+        sinceId: String? = null,
+        limit: Int? = null,
+    ): Response<List<NotificationRequest>> = stubList()
 
-    @POST("api/v1/notifications/requests/{id}/accept")
-    suspend fun acceptNotificationRequest(@Path("id") notificationId: String): NetworkResult<Unit>
+    suspend fun acceptNotificationRequest(notificationId: String): NetworkResult<Unit> =
+        NetworkResult.success(Unit)
 
-    @POST("api/v1/notifications/requests/{id}/dismiss")
-    suspend fun dismissNotificationRequest(@Path("id") notificationId: String): NetworkResult<Unit>
+    suspend fun dismissNotificationRequest(notificationId: String): NetworkResult<Unit> =
+        NetworkResult.success(Unit)
 
-    @GET("api/v1/instance/rules")
-    suspend fun getInstanceRules(
-        @Header(DOMAIN_HEADER) domain: String? = null
-    ): NetworkResult<List<Instance.Rule>>
+    // ---------------------------------------------------------------
+    // quotes
+    // ---------------------------------------------------------------
 
-    @POST("api/v1/statuses/{id}/quotes/{quoting_status_id}/revoke")
     suspend fun removeQuote(
-        @Path("id") id: String,
-        @Path("quoting_status_id") quotingStatusId: String
-    ): NetworkResult<Status>
+        id: String,
+        quotingStatusId: String,
+    ): NetworkResult<Status> = stubFailure("removeQuote")
 }
