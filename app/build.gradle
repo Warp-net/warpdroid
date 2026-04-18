@@ -118,16 +118,6 @@ android {
         viewBinding true
     }
 
-    testOptions {
-        unitTests {
-            returnDefaultValues = true
-            includeAndroidResources = true
-        }
-        unitTests.all {
-            systemProperty 'robolectric.logging.enabled', 'true'
-            systemProperty 'robolectric.lazyload', 'ON'
-        }
-    }
     // Exclude unneeded files added by libraries
     packagingOptions.resources.excludes += [
         'LICENSE_OFL',
@@ -181,13 +171,6 @@ licensee {
     allow(SpdxId.MIT)
     allow(SpdxId.BSD_3_Clause)
     allowUrl('https://github.com/AOMediaCodec/libavif/blob/master/LICENSE')
-}
-
-configurations {
-    // JNI-only libraries don't play nicely with Robolectric
-    // see https://github.com/tuskyapp/Tusky/pull/3367
-    testImplementation.exclude group: "org.conscrypt", module: "conscrypt-android"
-    testRuntime.exclude group: "org.conscrypt", module: "conscrypt-android"
 }
 
 // library versions are in PROJECT_ROOT/gradle/libs.versions.toml
@@ -246,20 +229,6 @@ dependencies {
     implementation libs.bundles.xmldiff
 
     implementation(libs.ktxml)
-
-    testImplementation libs.androidx.test.junit
-    testImplementation libs.robolectric
-    testImplementation libs.bundles.mockito
-    testImplementation libs.mockwebserver
-    testImplementation libs.androidx.core.testing
-    testImplementation libs.androidx.room.testing
-    testImplementation libs.kotlinx.coroutines.test
-    testImplementation libs.androidx.work.testing
-    testImplementation libs.androidx.paging.test
-    testImplementation libs.turbine
-
-    testImplementation libs.androidx.compose.test
-    debugImplementation libs.androidx.compose.test.manifest
 }
 
 // Retrofit, OkHttp, and Room are still listed in libs.versions.toml for now;

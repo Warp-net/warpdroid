@@ -94,7 +94,4 @@ dependencies {
     implementation libs.kotlinx.coroutines.android
     implementation libs.bundles.moshi
     ksp libs.moshi.kotlin.codegen
-
-    testImplementation libs.androidx.test.junit
-    testImplementation libs.kotlinx.coroutines.test
 }
