@@ -149,24 +149,30 @@ interface WarpnetBinding {
  * `object` so we don't carry any state on the Kotlin side that might desync
  * from the Go singleton.
  *
- * NOTE: the `node.Node` symbol only exists after gomobile produces
- * `warpnet.aar`. This import resolves at compile time from the AAR.
+ * Method names are camelCase because gomobile lowercases the first letter of
+ * Go-exported functions when generating Java bindings.
+ *
+ * `initialize` is a stub: gomobile bind cannot marshal `[]string` so it
+ * silently drops any Go function that takes one — see the generated
+ * `node/Node.java` "skipped function Initialize" comment. The companion
+ * android-binding repo needs a `func Initialize(pskBase64, bootstrapCsv string)`
+ * signature and a rebuilt AAR before this wrapper can forward to it.
  */
 object DefaultBinding : WarpnetBinding {
     override fun initialize(pskBase64: String, bootstrapAddrs: Array<String>): String =
-        node.Node.Initialize(pskBase64, bootstrapAddrs.toList())
+        "warpnet AAR does not export Initialize; rebuild android-binding with a gomobile-compatible signature"
 
     override fun connect(addrInfo: String): String =
-        node.Node.Connect(addrInfo)
+        node.Node.connect(addrInfo)
 
     override fun stream(protocolId: String, data: String): String =
-        node.Node.Stream(protocolId, data)
+        node.Node.stream(protocolId, data)
 
-    override fun peerId(): String = node.Node.PeerID()
+    override fun peerId(): String = node.Node.peerID()
 
-    override fun isConnected(): Boolean = node.Node.IsConnected() == "true"
+    override fun isConnected(): Boolean = node.Node.isConnected() == "true"
 
-    override fun disconnect(): String = node.Node.Disconnect()
+    override fun disconnect(): String = node.Node.disconnect()
 
-    override fun shutdown(): String = node.Node.Shutdown()
+    override fun shutdown(): String = node.Node.shutdown()
 }
