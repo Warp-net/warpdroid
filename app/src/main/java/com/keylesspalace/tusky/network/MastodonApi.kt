@@ -38,7 +38,9 @@ import com.keylesspalace.tusky.entity.Filter
 import com.keylesspalace.tusky.entity.FilterKeyword
 import com.keylesspalace.tusky.entity.HashTag
 import com.keylesspalace.tusky.entity.Instance
+import com.keylesspalace.tusky.entity.InstanceConfiguration
 import com.keylesspalace.tusky.entity.InstanceV1
+import com.keylesspalace.tusky.entity.StatusConfiguration
 import com.keylesspalace.tusky.entity.Marker
 import com.keylesspalace.tusky.entity.MastoList
 import com.keylesspalace.tusky.entity.MediaUploadResult
@@ -80,6 +82,11 @@ class MastodonApi @Inject constructor(
         const val ENDPOINT_AUTHORIZE = "oauth/authorize"
         const val DOMAIN_HEADER = "domain"
         const val PLACEHOLDER_DOMAIN = "dummy.placeholder"
+
+        // Instance stub values — no Warpnet endpoint reports these, so we
+        // hard-code the compose / onboarding UX against known node limits.
+        private const val WARPNET_INSTANCE_VERSION = "0.0.0"
+        private const val WARPNET_MAX_TWEET_CHARS = 2000
 
         private val STUB_BODY = "".toResponseBody("text/plain".toMediaTypeOrNull())
         private fun unsupported(name: String) =
@@ -135,9 +142,43 @@ class MastodonApi @Inject constructor(
 
     suspend fun getCustomEmojis(): NetworkResult<List<Emoji>> = NetworkResult.success(emptyList())
 
-    suspend fun getInstanceV1(): NetworkResult<InstanceV1> = stubFailure("getInstanceV1")
+    /**
+     * Warpnet nodes expose [site.warpnet.transport.ProtocolIds.PUBLIC_GET_INFO]
+     * which returns libp2p-peer-level metadata (peer id, protocols, start
+     * time) — nothing that lines up with Mastodon's instance descriptor.
+     * Return a static Warpnet-shaped stub so onboarding / compose / settings
+     * screens have the fields they gate on.
+     */
+    suspend fun getInstanceV1(): NetworkResult<InstanceV1> = NetworkResult.success(
+        InstanceV1(
+            uri = PLACEHOLDER_DOMAIN,
+            version = WARPNET_INSTANCE_VERSION,
+            maxTootChars = WARPNET_MAX_TWEET_CHARS,
+            maxMediaAttachments = 0,
+            uploadLimit = 0,
+            configuration = InstanceConfiguration(
+                statuses = StatusConfiguration(
+                    maxCharacters = WARPNET_MAX_TWEET_CHARS,
+                    maxMediaAttachments = 0,
+                    charactersReservedPerUrl = 23,
+                ),
+            ),
+        ),
+    )
 
-    suspend fun getInstance(): NetworkResult<Instance> = stubFailure("getInstance")
+    suspend fun getInstance(): NetworkResult<Instance> = NetworkResult.success(
+        Instance(
+            domain = PLACEHOLDER_DOMAIN,
+            version = WARPNET_INSTANCE_VERSION,
+            configuration = Instance.Configuration(
+                statuses = Instance.Configuration.Statuses(
+                    maxCharacters = WARPNET_MAX_TWEET_CHARS,
+                    maxMediaAttachments = 0,
+                    charactersReservedPerUrl = 23,
+                ),
+            ),
+        ),
+    )
 
     suspend fun getInstanceRules(domain: String? = null): NetworkResult<List<Instance.Rule>> =
         NetworkResult.success(emptyList())
