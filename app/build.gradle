@@ -190,81 +190,11 @@ configurations {
     testRuntime.exclude group: "org.conscrypt", module: "conscrypt-android"
 }
 
-// --- Warpnet native binding ---
-//
-// The Warpnet libp2p thin-client lives in the Go module at
-//   https://github.com/Warp-net/android-binding
-// and is packaged as `warpnet.aar` via `gomobile bind`. We vendor the pre-built
-// AAR in `app/libs/` so the Gradle build doesn't depend on having a Go
-// toolchain installed. The `buildWarpnetAar` task below rebuilds it from a
-// sibling checkout of `android-binding` for developers working on the
-// transport layer; CI (and F-Droid's reproducible-build config, Phase 6)
-// should run this task before assembling.
-//
-// The AAR is pinned by SHA-256 in `app/libs/warpnet.aar.sha256`. The
-// `verifyWarpnetAarChecksum` task enforces the pin so a silent swap of the
-// binary fails the build.
-
-ext {
-    warpnetAarFile = file("libs/warpnet.aar")
-    warpnetAarChecksumFile = file("libs/warpnet.aar.sha256")
-    warpnetBindingDir = providers
-        .environmentVariable("WARPNET_ANDROID_BINDING_DIR")
-        .orElse(file("${rootDir}/../android-binding").absolutePath)
-        .get()
-}
-
-tasks.register("buildWarpnetAar", Exec) {
-    group = "warpnet"
-    description = "Rebuilds warpnet.aar from a sibling android-binding checkout via gomobile."
-    def bindingDir = file(warpnetBindingDir)
-    workingDir = bindingDir
-    commandLine "bash", "build-native.sh"
-    doFirst {
-        if (!bindingDir.exists()) {
-            throw new GradleException(
-                "Warpnet binding source not found at ${bindingDir}. Clone " +
-                "https://github.com/Warp-net/android-binding next to this repo " +
-                "or set WARPNET_ANDROID_BINDING_DIR."
-            )
-        }
-    }
-    doLast {
-        copy {
-            from bindingDir
-            include "warpnet.aar", "warpnet-sources.jar"
-            into warpnetAarFile.parentFile
-        }
-    }
-}
-
-tasks.register("verifyWarpnetAarChecksum") {
-    group = "warpnet"
-    description = "Fails the build if app/libs/warpnet.aar drifts from the pinned SHA-256."
-    doLast {
-        if (!warpnetAarFile.exists()) {
-            throw new GradleException("Missing ${warpnetAarFile}. Run :app:buildWarpnetAar.")
-        }
-        def expected = warpnetAarChecksumFile.text.trim().split(/\s+/)[0]
-        def actual = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(warpnetAarFile.bytes)
-            .collect { String.format('%02x', it) }
-            .join('')
-        if (expected != actual) {
-            throw new GradleException(
-                "warpnet.aar checksum mismatch.\n  expected: ${expected}\n  actual:   ${actual}\n" +
-                "Either restore the pinned binary, or intentionally update " +
-                "app/libs/warpnet.aar.sha256 after reviewing the new AAR."
-            )
-        }
-    }
-}
-
-tasks.named("preBuild") { dependsOn "verifyWarpnetAarChecksum" }
-
 // library versions are in PROJECT_ROOT/gradle/libs.versions.toml
+// The warpnet.aar + gomobile rebuild task live in :warpnet-transport, which
+// the app module depends on transitively.
 dependencies {
-    implementation files("libs/warpnet.aar")
+    implementation project(":warpnet-transport")
 
     implementation libs.kotlinx.coroutines.android
 
