@@ -128,12 +128,6 @@ android {
             systemProperty 'robolectric.lazyload', 'ON'
         }
     }
-    sourceSets {
-        // workaround to have migrations available in unit tests
-        // https://github.com/robolectric/robolectric/issues/3928#issuecomment-395309991
-        debug.assets.srcDirs += files("$projectDir/schemas".toString())
-    }
-
     // Exclude unneeded files added by libraries
     packagingOptions.resources.excludes += [
         'LICENSE_OFL',
@@ -180,12 +174,6 @@ android {
             track.set("internal")
         }
     }
-}
-
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
-    arg("room.generateKotlin", "true")
-    arg("room.incremental", "true")
 }
 
 licensee {
@@ -281,8 +269,6 @@ dependencies {
     implementation libs.kotlinx.coroutines.android
 
     implementation libs.bundles.androidx
-    implementation libs.bundles.room
-    ksp libs.androidx.room.compiler
 
     implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.material
@@ -342,3 +328,8 @@ dependencies {
     testImplementation libs.androidx.compose.test
     debugImplementation libs.androidx.compose.test.manifest
 }
+
+// Retrofit, OkHttp, and Room are still listed in libs.versions.toml for now;
+// they will be removed in a follow-up commit once the Warpnet transport has
+// fully replaced their call sites. Leaving them as unused `libs.*` aliases
+// does not bloat the APK (unreferenced aliases are not resolved).
