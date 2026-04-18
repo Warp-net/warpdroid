@@ -231,6 +231,16 @@ dependencies {
     implementation(libs.ktxml)
 }
 
+// Hilt's XProcessing framework transitively pulls androidx.room:room-compiler-processing
+// onto the KSP processor classpath. With Room itself no longer declared, nothing pins the
+// version, and the resolver falls back to 2.6.0 — a version whose sha256 isn't in
+// gradle/verification-metadata.xml. Pin it to the already-verified 2.6.1 instead.
+configurations.configureEach {
+    resolutionStrategy {
+        force "androidx.room:room-compiler-processing:2.6.1"
+    }
+}
+
 // Retrofit and OkHttp are still listed in libs.versions.toml for now;
 // they will be removed in a follow-up commit once the Warpnet transport has
 // fully replaced their call sites. Leaving them as unused `libs.*` aliases
