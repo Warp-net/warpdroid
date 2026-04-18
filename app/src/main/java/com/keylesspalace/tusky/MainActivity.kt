@@ -79,7 +79,6 @@ import com.keylesspalace.tusky.components.announcements.AnnouncementsActivity
 import com.keylesspalace.tusky.components.compose.ComposeActivity
 import com.keylesspalace.tusky.components.compose.ComposeActivity.Companion.canHandleMimeType
 import com.keylesspalace.tusky.components.drafts.DraftsActivity
-import com.keylesspalace.tusky.components.login.LoginActivity
 import com.keylesspalace.tusky.components.preference.PreferencesActivity
 import com.keylesspalace.tusky.components.scheduled.ScheduledStatusActivity
 import com.keylesspalace.tusky.components.search.SearchActivity
@@ -129,6 +128,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.migration.OptionalInject
 import javax.inject.Inject
 import kotlinx.coroutines.launch
+import site.warpnet.transport.ConnectionState
+import site.warpnet.transport.WarpnetClient
 
 @OptionalInject
 @AndroidEntryPoint
@@ -151,6 +152,9 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
 
     @Inject
     lateinit var developerToolsUseCase: DeveloperToolsUseCase
+
+    @Inject
+    lateinit var warpnetClient: WarpnetClient
 
     private val viewModel: MainViewModel by viewModels()
 
@@ -302,12 +306,8 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
         setupDrawer(
             savedInstanceState,
             addSearchButton = hideTopToolbar,
-            addTrendingTagsButton = !activeAccount.tabPreferences.hasTab(
-                TRENDING_TAGS
-            ),
-            addTrendingStatusesButton = !activeAccount.tabPreferences.hasTab(
-                TRENDING_STATUSES
-            )
+            addTrendingTagsButton = false,
+            addTrendingStatusesButton = false,
         )
 
         lifecycleScope.launch {
@@ -350,6 +350,27 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
 
         // "Post failed" dialog should display in this activity
         draftsAlert.observeInContext(this@MainActivity, true)
+
+        lifecycleScope.launch {
+            warpnetClient.state.collect(::updateOfflineBanner)
+        }
+    }
+
+    private fun updateOfflineBanner(state: ConnectionState) {
+        val banner = binding.warpnetOfflineBanner
+        if (state is ConnectionState.Connected) {
+            banner.visibility = View.GONE
+            return
+        }
+        val messageRes = when (state) {
+            ConnectionState.Uninitialised -> R.string.warpnet_offline_banner_uninitialised
+            ConnectionState.Disconnected -> R.string.warpnet_offline_banner_disconnected
+            ConnectionState.Connecting -> R.string.warpnet_offline_banner_connecting
+            is ConnectionState.Failed -> R.string.warpnet_offline_banner_failed
+            ConnectionState.Connected -> return
+        }
+        banner.setText(messageRes)
+        banner.visibility = View.VISIBLE
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -457,10 +478,8 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
                 .setNeutralButton(R.string.action_remove_account) { _, _ ->
                     logout(true)
                 }
-                .setPositiveButton(R.string.action_login_again) { _, _ ->
-                    startActivity(LoginActivity.newIntent(this, LoginActivity.MODE_RELOGIN))
-                }
                 .show()
+            // No relogin path — Warpdroid is session-less.
         }
     }
 
@@ -850,12 +869,7 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
         tabLayoutMediator = TabLayoutMediator(activeTabLayout, binding.viewPager, true) { tab: TabLayout.Tab, position: Int ->
             tab.icon = AppCompatResources.getDrawable(this@MainActivity, tabs[position].icon)
             tab.contentDescription = tabs[position].title(this)
-            if (tabs[position].id == DIRECT) {
-                val badge = tab.orCreateBadge
-                badge.isVisible = activeAccount.hasDirectMessageBadge
-                badge.backgroundColor = MaterialColors.getColor(binding.mainDrawer, appcompatR.attr.colorPrimary)
-                directMessageTab = tab
-            }
+            // Warpdroid has no direct-message tab; nothing to badge here.
         }.also { it.attach() }
         updateDirectMessageBadge(viewModel.showDirectMessagesBadge.value)
 
@@ -913,11 +927,8 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
             startActivityWithSlideInAnimation(intent)
             return false
         }
-        // open LoginActivity to add new account
+        // "Add account" is a no-op in Warpdroid — single stub account only.
         if (profile.identifier == DRAWER_ITEM_ADD_ACCOUNT) {
-            startActivityWithSlideInAnimation(
-                LoginActivity.newIntent(this, LoginActivity.MODE_ADDITIONAL_LOGIN)
-            )
             return false
         }
         // change Account
@@ -965,14 +976,11 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
                 binding.bottomNav.hide()
                 binding.composeButton.hide()
 
+                // Logout has no destination in Warpdroid — the app simply restarts
+                // into the same stub account.
                 lifecycleScope.launch {
-                    val otherAccountAvailable = logoutUsecase.logout(activeAccount)
-                    val intent = if (otherAccountAvailable) {
-                        Intent(this@MainActivity, MainActivity::class.java)
-                    } else {
-                        LoginActivity.newIntent(this@MainActivity, LoginActivity.MODE_DEFAULT)
-                    }
-                    startActivity(intent)
+                    logoutUsecase.logout(activeAccount)
+                    startActivity(Intent(this@MainActivity, MainActivity::class.java))
                     finish()
                 }
             }

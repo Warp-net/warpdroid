@@ -17,7 +17,6 @@ package com.keylesspalace.tusky
 import android.app.ActivityManager.TaskDescription
 import android.content.Context
 import android.content.DialogInterface
-import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -42,8 +41,6 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.keylesspalace.tusky.MainActivity.Companion.redirectIntent
 import com.keylesspalace.tusky.adapter.AccountSelectionAdapter
-import com.keylesspalace.tusky.components.login.LoginActivity
-import com.keylesspalace.tusky.components.login.LoginActivity.Companion.newIntent
 import com.keylesspalace.tusky.db.AccountManager
 import com.keylesspalace.tusky.db.entity.AccountEntity
 import com.keylesspalace.tusky.di.PreferencesEntryPoint
@@ -125,9 +122,7 @@ abstract class BaseActivity : AppCompatActivity() {
         val style = textStyle(preferences.getString(PrefKeys.STATUS_TEXT_SIZE, "medium"))
         getTheme().applyStyle(style, true)
 
-        if (requiresLogin()) {
-            redirectIfNotLoggedIn()
-        }
+        // Warpdroid has no login flow — the stub account is always active.
     }
 
     override fun onPostCreate(savedInstanceState: Bundle?) {
@@ -214,17 +209,6 @@ abstract class BaseActivity : AppCompatActivity() {
             return true
         }
         return super.onOptionsItemSelected(item)
-    }
-
-    private fun redirectIfNotLoggedIn() {
-        val currentAccounts = accountManager.accounts
-
-        if (currentAccounts.isEmpty()) {
-            val intent = newIntent(this@BaseActivity, LoginActivity.MODE_DEFAULT)
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(intent)
-            finish()
-        }
     }
 
     fun showAccountChooserDialog(
