@@ -32,6 +32,7 @@ import site.warpnet.transport.dto.GetIsFollowingEvent
 import site.warpnet.transport.dto.GetNotificationsEvent
 import site.warpnet.transport.dto.GetNotificationsResponse
 import site.warpnet.transport.dto.GetTweetEvent
+import site.warpnet.transport.dto.GetTweetStatsEvent
 import site.warpnet.transport.dto.GetUserEvent
 import site.warpnet.transport.dto.IsFollowerResponse
 import site.warpnet.transport.dto.IsFollowingResponse
@@ -40,6 +41,7 @@ import site.warpnet.transport.dto.LikesCountResponse
 import site.warpnet.transport.dto.NewFollowEvent
 import site.warpnet.transport.dto.NewUnfollowEvent
 import site.warpnet.transport.dto.RepliesResponse
+import site.warpnet.transport.dto.TweetStatsResponse
 import site.warpnet.transport.dto.TweetsResponse
 import site.warpnet.transport.dto.UnretweetEvent
 import site.warpnet.transport.dto.UsersResponse
@@ -73,6 +75,7 @@ class WarpnetRepository @Inject constructor(
     private val repliesRespAdapter = moshi.adapter<RepliesResponse>()
     private val notificationsRespAdapter = moshi.adapter<GetNotificationsResponse>()
     private val likesCountAdapter = moshi.adapter<LikesCountResponse>()
+    private val tweetStatsRespAdapter = moshi.adapter<TweetStatsResponse>()
     private val usersRespAdapter = moshi.adapter<UsersResponse>()
     private val followersRespAdapter = moshi.adapter<FollowersResponse>()
     private val followingsRespAdapter = moshi.adapter<FollowingsResponse>()
@@ -83,6 +86,7 @@ class WarpnetRepository @Inject constructor(
     private val getAllTweetsAdapter = moshi.adapter<GetAllTweetsEvent>()
     private val getAllUsersAdapter = moshi.adapter<GetAllUsersEvent>()
     private val getTweetAdapter = moshi.adapter<GetTweetEvent>()
+    private val getTweetStatsAdapter = moshi.adapter<GetTweetStatsEvent>()
     private val getRepliesAdapter = moshi.adapter<GetAllRepliesEvent>()
     private val getNotifsAdapter = moshi.adapter<GetNotificationsEvent>()
     private val getFollowersAdapter = moshi.adapter<GetFollowersEvent>()
@@ -145,7 +149,21 @@ class WarpnetRepository @Inject constructor(
         )
         val tweet = tweetAdapter.fromJson(raw)
             ?: throw IllegalStateException("getStatus returned empty body for $tweetId")
-        return tweet.toStatus(author = runCatching { getUser(tweet.userId) }.getOrNull())
+        val base = tweet.toStatus(author = runCatching { getUser(tweet.userId) }.getOrNull())
+        val stats = runCatching { getTweetStats(tweetId = tweet.id, userId = userId) }.getOrNull()
+        return if (stats == null) base else base.copy(
+            favouritesCount = stats.likesCount.toInt(),
+            reblogsCount = stats.retweetsCount.toInt(),
+            repliesCount = stats.repliesCount.toInt(),
+        )
+    }
+
+    suspend fun getTweetStats(tweetId: String, userId: String): TweetStatsResponse {
+        val raw = client.request(
+            ProtocolIds.PUBLIC_GET_TWEET_STATS,
+            getTweetStatsAdapter.toJson(GetTweetStatsEvent(tweetId = tweetId, userId = userId)),
+        )
+        return tweetStatsRespAdapter.fromJson(raw) ?: TweetStatsResponse(tweetId = tweetId)
     }
 
     suspend fun getReplies(rootId: String, parentId: String = "", cursor: String = ""): List<Status> {

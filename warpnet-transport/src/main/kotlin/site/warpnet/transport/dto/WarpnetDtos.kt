@@ -113,6 +113,12 @@ data class LikeEvent(
 )
 
 @JsonClass(generateAdapter = true)
+data class GetTweetStatsEvent(
+    @Json(name = "tweet_id") val tweetId: String,
+    @Json(name = "user_id") val userId: String,
+)
+
+@JsonClass(generateAdapter = true)
 data class DeleteTweetEvent(
     @Json(name = "tweet_id") val tweetId: String,
     @Json(name = "user_id") val userId: String,
@@ -220,4 +226,14 @@ data class IsFollowingResponse(
 @JsonClass(generateAdapter = true)
 data class IsFollowerResponse(
     @Json(name = "is_follower") val isFollower: Boolean = false,
+)
+
+@JsonClass(generateAdapter = true)
+data class TweetStatsResponse(
+    @Json(name = "tweet_id") val tweetId: String = "",
+    @Json(name = "tweets_count") val tweetsCount: Long = 0,
+    @Json(name = "retweets_count") val retweetsCount: Long = 0,
+    @Json(name = "likes_count") val likesCount: Long = 0,
+    @Json(name = "replies_count") val repliesCount: Long = 0,
+    @Json(name = "views_count") val viewsCount: Long = 0,
 )
