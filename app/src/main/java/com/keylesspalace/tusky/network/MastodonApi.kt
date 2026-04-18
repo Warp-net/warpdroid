@@ -88,6 +88,21 @@ class MastodonApi @Inject constructor(
         private fun <T> stubList(): Response<List<T>> = Response.success(emptyList())
     }
 
+    private suspend fun <T> response(block: suspend () -> T): Response<T> = try {
+        Response.success(block())
+    } catch (t: Throwable) {
+        Response.error(
+            500,
+            (t.message ?: t.javaClass.simpleName).toResponseBody("text/plain".toMediaTypeOrNull()),
+        )
+    }
+
+    private suspend fun <T> result(block: suspend () -> T): NetworkResult<T> = try {
+        NetworkResult.success(block())
+    } catch (t: Throwable) {
+        NetworkResult.failure(t)
+    }
+
     // ---------------------------------------------------------------
     // instance metadata / custom emojis
     // ---------------------------------------------------------------
@@ -142,15 +157,27 @@ class MastodonApi @Inject constructor(
         minId: String? = null,
         sinceId: String? = null,
         limit: Int? = null,
-    ): Response<List<Status>> = stubList()
+    ): Response<List<Status>> = response {
+        warpnet.getHomeTimeline(cursor = maxId.orEmpty(), limit = limit ?: 40)
+    }
 
+    /**
+     * Mastodon's public timeline has no direct Warpnet equivalent. Fall
+     * back to the active account's own feed so the UI stays populated.
+     */
     suspend fun publicTimeline(
         local: Boolean? = null,
         maxId: String? = null,
         minId: String? = null,
         sinceId: String? = null,
         limit: Int? = null,
-    ): Response<List<Status>> = stubList()
+    ): Response<List<Status>> {
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
+        if (userId.isEmpty()) return stubList()
+        return response {
+            warpnet.getUserTimeline(userId = userId, cursor = maxId.orEmpty(), limit = limit ?: 40)
+        }
+    }
 
     suspend fun hashtagTimeline(
         hashtag: String,
@@ -248,7 +275,16 @@ class MastodonApi @Inject constructor(
 
     suspend fun statusSource(statusId: String): NetworkResult<StatusSource> = stubFailure("statusSource")
 
-    suspend fun statusContext(statusId: String): NetworkResult<StatusContext> = stubFailure("statusContext")
+    suspend fun statusContext(statusId: String): NetworkResult<StatusContext> = result {
+        // Warpnet exposes replies only (descendants); Mastodon's ancestors
+        // chain has no transport-level equivalent, so we return an empty
+        // ancestor list and let the UI render the focused status plus its
+        // replies.
+        StatusContext(
+            ancestors = emptyList(),
+            descendants = warpnet.getReplies(rootId = statusId),
+        )
+    }
 
     suspend fun statusEdits(statusId: String): NetworkResult<List<StatusEdit>> =
         NetworkResult.success(emptyList())
@@ -343,7 +379,9 @@ class MastodonApi @Inject constructor(
         excludeReblogs: Boolean? = null,
         onlyMedia: Boolean? = null,
         pinned: Boolean? = null,
-    ): Response<List<Status>> = stubList()
+    ): Response<List<Status>> = response {
+        warpnet.getUserTimeline(userId = accountId, cursor = maxId.orEmpty(), limit = limit ?: 40)
+    }
 
     suspend fun accountFollowers(
         accountId: String,
