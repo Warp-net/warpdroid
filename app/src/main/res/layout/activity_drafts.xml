@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".components.drafts.DraftsActivity">
+
+    <include
+        android:id="@+id/includedToolbar"
+        layout="@layout/toolbar_basic" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/draftsRecyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingBottom="@dimen/recyclerview_bottom_padding_no_actionbutton"
+        android:scrollbarStyle="outsideInset"
+        android:scrollbars="vertical"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
+
+    <com.keylesspalace.tusky.view.BackgroundMessageView
+        android:id="@+id/draftsErrorMessageView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:layout_gravity="center"
+        android:src="@android:color/transparent"
+        android:visibility="gone"
+        tools:src="@drawable/errorphant_error"
+        tools:visibility="visible" />
+
+    <include
+        android:id="@+id/bottomSheet"
+        layout="@layout/item_status_bottom_sheet" />
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

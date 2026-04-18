@@ -1,0 +1,611 @@
+/* Copyright 2024 Tusky Contributors
+ *
+ * This file is a part of Tusky.
+ *
+ * This program is free software; you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation; either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * Tusky is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ * the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+ * Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with Tusky; if not,
+ * see <http://www.gnu.org/licenses>. */
+
+package com.keylesspalace.tusky.components.notifications
+
+import android.content.DialogInterface
+import android.content.SharedPreferences
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuInflater
+import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.ListView
+import android.widget.PopupWindow
+import androidx.appcompat.R as appcompatR
+import androidx.coordinatorlayout.widget.CoordinatorLayout
+import androidx.core.view.MenuProvider
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.paging.LoadState
+import androidx.recyclerview.widget.ConcatAdapter
+import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.SimpleItemAnimator
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import at.connyduck.calladapter.networkresult.onFailure
+import at.connyduck.sparkbutton.compose.SparkButtonState
+import com.google.android.material.appbar.AppBarLayout
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
+import com.keylesspalace.tusky.BaseActivity
+import com.keylesspalace.tusky.BottomSheetActivity
+import com.keylesspalace.tusky.R
+import com.keylesspalace.tusky.appstore.EventHub
+import com.keylesspalace.tusky.appstore.PreferenceChangedEvent
+import com.keylesspalace.tusky.components.compose.ComposeActivity
+import com.keylesspalace.tusky.components.instanceinfo.InstanceInfoRepository
+import com.keylesspalace.tusky.components.notifications.requests.NotificationRequestsActivity
+import com.keylesspalace.tusky.components.preference.PreferencesFragment.ReadingOrder
+import com.keylesspalace.tusky.components.systemnotifications.NotificationChannelData
+import com.keylesspalace.tusky.components.systemnotifications.NotificationHelper
+import com.keylesspalace.tusky.databinding.FragmentTimelineNotificationsBinding
+import com.keylesspalace.tusky.databinding.NotificationsFilterBinding
+import com.keylesspalace.tusky.db.AccountManager
+import com.keylesspalace.tusky.entity.Status
+import com.keylesspalace.tusky.interfaces.AccountActionListener
+import com.keylesspalace.tusky.interfaces.LoadMoreActionListener
+import com.keylesspalace.tusky.interfaces.ReselectableFragment
+import com.keylesspalace.tusky.interfaces.StatusActionListener
+import com.keylesspalace.tusky.settings.PrefKeys
+import com.keylesspalace.tusky.util.CardViewMode
+import com.keylesspalace.tusky.util.StatusDisplayOptions
+import com.keylesspalace.tusky.util.dpToPx
+import com.keylesspalace.tusky.util.ensureBottomPadding
+import com.keylesspalace.tusky.util.hide
+import com.keylesspalace.tusky.util.openLink
+import com.keylesspalace.tusky.util.reply
+import com.keylesspalace.tusky.util.report
+import com.keylesspalace.tusky.util.show
+import com.keylesspalace.tusky.util.startActivityWithSlideInAnimation
+import com.keylesspalace.tusky.util.viewAccount
+import com.keylesspalace.tusky.util.viewBinding
+import com.keylesspalace.tusky.util.viewMedia
+import com.keylesspalace.tusky.util.viewTag
+import com.keylesspalace.tusky.util.viewThread
+import com.keylesspalace.tusky.view.ConfirmationBottomSheet.Companion.confirmFavourite
+import com.keylesspalace.tusky.view.ConfirmationBottomSheet.Companion.confirmReblog
+import com.keylesspalace.tusky.viewdata.AttachmentViewData
+import com.keylesspalace.tusky.viewdata.NotificationViewData
+import com.keylesspalace.tusky.viewdata.StatusViewData
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+
+@AndroidEntryPoint
+class NotificationsFragment :
+    Fragment(R.layout.fragment_timeline_notifications),
+    SwipeRefreshLayout.OnRefreshListener,
+    StatusActionListener,
+    LoadMoreActionListener<NotificationViewData.LoadMore>,
+    NotificationActionListener,
+    AccountActionListener,
+    MenuProvider,
+    ReselectableFragment {
+
+    @Inject
+    lateinit var preferences: SharedPreferences
+
+    @Inject
+    lateinit var eventHub: EventHub
+
+    @Inject
+    lateinit var notificationHelper: NotificationHelper
+
+    @Inject
+    lateinit var accountManager: AccountManager
+
+    @Inject
+    lateinit var instanceInfoRepository: InstanceInfoRepository
+
+    private val binding by viewBinding(FragmentTimelineNotificationsBinding::bind)
+
+    private val viewModel: NotificationsViewModel by viewModels()
+
+    private var notificationsAdapter: NotificationsPagingAdapter? = null
+    private var notificationsPolicyAdapter: NotificationPolicySummaryAdapter? = null
+
+    private var showNotificationsFilterBar: Boolean = true
+    private var readingOrder: ReadingOrder = ReadingOrder.NEWEST_FIRST
+
+    /** see [com.keylesspalace.tusky.components.timeline.TimelineFragment] for explanation of the load more mechanism */
+    private var loadMorePosition: Int? = null
+    private var statusIdBelowLoadMore: String? = null
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        requireActivity().addMenuProvider(this, viewLifecycleOwner, Lifecycle.State.RESUMED)
+
+        val activeAccount = accountManager.activeAccount ?: return
+
+        val statusDisplayOptions = StatusDisplayOptions(
+            animateAvatars = preferences.getBoolean(PrefKeys.ANIMATE_GIF_AVATARS, false),
+            mediaPreviewEnabled = activeAccount.mediaPreviewEnabled,
+            useAbsoluteTime = preferences.getBoolean(PrefKeys.ABSOLUTE_TIME_VIEW, false),
+            showBotOverlay = preferences.getBoolean(PrefKeys.SHOW_BOT_OVERLAY, true),
+            useBlurhash = preferences.getBoolean(PrefKeys.USE_BLURHASH, true),
+            cardViewMode = if (preferences.getBoolean(PrefKeys.SHOW_CARDS_IN_TIMELINES, false)) {
+                CardViewMode.INDENTED
+            } else {
+                CardViewMode.NONE
+            },
+            hideStats = preferences.getBoolean(PrefKeys.WELLBEING_HIDE_STATS_POSTS, false),
+            animateEmojis = preferences.getBoolean(PrefKeys.ANIMATE_CUSTOM_EMOJIS, false),
+            showStatsInline = preferences.getBoolean(PrefKeys.SHOW_STATS_INLINE, false),
+            showSensitiveMedia = activeAccount.alwaysShowSensitiveMedia,
+            openSpoiler = activeAccount.alwaysOpenSpoiler
+        )
+
+        binding.recyclerView.ensureBottomPadding(fab = true)
+
+        // setup the notifications filter bar
+        showNotificationsFilterBar = preferences.getBoolean(PrefKeys.SHOW_NOTIFICATIONS_FILTER, true)
+        updateFilterBarVisibility()
+        binding.buttonClear.setOnClickListener { confirmClearNotifications() }
+        binding.buttonFilter.setOnClickListener { showFilterMenu() }
+
+        // Setup the SwipeRefreshLayout.
+        binding.swipeRefreshLayout.setOnRefreshListener(this)
+
+        // Setup the RecyclerView.
+        binding.recyclerView.setHasFixedSize(true)
+        val adapter = NotificationsPagingAdapter(
+            statusListener = this,
+            notificationActionListener = this,
+            loadMoreListener = this,
+            accountActionListener = this,
+            statusDisplayOptions = statusDisplayOptions,
+            instanceName = activeAccount.domain,
+            accountManager = accountManager
+        )
+        this.notificationsAdapter = adapter
+        binding.recyclerView.layoutManager = LinearLayoutManager(context)
+
+        val notificationsPolicyAdapter = NotificationPolicySummaryAdapter {
+            (activity as BaseActivity).startActivityWithSlideInAnimation(NotificationRequestsActivity.newIntent(requireContext()))
+        }
+        this.notificationsPolicyAdapter = notificationsPolicyAdapter
+
+        binding.recyclerView.adapter = ConcatAdapter(notificationsPolicyAdapter, notificationsAdapter)
+
+        (binding.recyclerView.itemAnimator as SimpleItemAnimator).supportsChangeAnimations = false
+
+        binding.recyclerView.addItemDecoration(
+            DividerItemDecoration(context, DividerItemDecoration.VERTICAL)
+        )
+
+        readingOrder = ReadingOrder.from(preferences.getString(PrefKeys.READING_ORDER, null))
+
+        notificationsPolicyAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
+                binding.recyclerView.scrollToPosition(0)
+            }
+        })
+
+        adapter.addLoadStateListener { loadState ->
+            if (loadState.refresh != LoadState.Loading && loadState.source.refresh != LoadState.Loading) {
+                binding.swipeRefreshLayout.isRefreshing = false
+            }
+
+            binding.statusView.hide()
+            binding.progressBar.hide()
+
+            if (adapter.itemCount == 0) {
+                when (loadState.refresh) {
+                    is LoadState.NotLoading -> {
+                        if (loadState.append is LoadState.NotLoading && loadState.source.refresh is LoadState.NotLoading) {
+                            binding.statusView.show()
+                            binding.statusView.setup(R.drawable.elephant_friend_empty, R.string.message_empty)
+                        }
+                    }
+                    is LoadState.Error -> {
+                        binding.statusView.show()
+                        binding.statusView.setup((loadState.refresh as LoadState.Error).error) { onRefresh() }
+                    }
+                    is LoadState.Loading -> {
+                        binding.progressBar.show()
+                    }
+                }
+            }
+        }
+
+        adapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
+                val firstPos = (binding.recyclerView.layoutManager as LinearLayoutManager).findFirstCompletelyVisibleItemPosition()
+                if (firstPos == 0 && positionStart == 0 && adapter.itemCount != itemCount) {
+                    binding.recyclerView.post {
+                        if (getView() != null) {
+                            binding.recyclerView.scrollBy(
+                                0,
+                                dpToPx(binding.recyclerView.context, -30)
+                            )
+                        }
+                    }
+                    loadMorePosition = null
+                }
+                if (readingOrder == ReadingOrder.OLDEST_FIRST) {
+                    updateReadingPositionForOldestFirst(adapter)
+                }
+            }
+        })
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.notifications.collectLatest { pagingData ->
+                adapter.submitData(pagingData)
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            eventHub.events.collect { event ->
+                if (event is PreferenceChangedEvent) {
+                    onPreferenceChanged(adapter, event.preferenceKey)
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                accountManager.activeAccount?.let { account ->
+                    notificationHelper.clearNotificationsForAccount(account)
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.notificationPolicy.collect {
+                notificationsPolicyAdapter.updateState(it)
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.startComposing.collect { composeOptions ->
+                val intent = ComposeActivity.newIntent(requireContext(), composeOptions)
+                requireContext().startActivityWithSlideInAnimation(intent)
+            }
+        }
+    }
+
+    override fun onDestroyView() {
+        // Clear the adapters to prevent leaking the View
+        notificationsAdapter = null
+        notificationsPolicyAdapter = null
+        super.onDestroyView()
+    }
+
+    override fun onReselect() {
+        if (view != null) {
+            binding.recyclerView.layoutManager?.scrollToPosition(0)
+            binding.recyclerView.stopScroll()
+        }
+    }
+
+    override fun onRefresh() {
+        notificationsAdapter?.refresh()
+        viewModel.loadNotificationPolicy()
+    }
+
+    override fun onReblog(
+        viewData: StatusViewData.Concrete,
+        reblog: Boolean,
+        visibility: Status.Visibility?,
+        state: SparkButtonState?
+    ) {
+        if (reblog && visibility == null) {
+            confirmReblog(preferences) { visibility ->
+                viewModel.reblog(viewData.id, true, visibility)
+                state?.animate()
+            }
+        } else {
+            viewModel.reblog(viewData.id, reblog, visibility ?: Status.Visibility.PUBLIC)
+            if (reblog) {
+                state?.animate()
+            }
+        }
+    }
+
+    override fun onFavourite(
+        viewData: StatusViewData.Concrete,
+        favourite: Boolean,
+        state: SparkButtonState?
+    ) {
+        if (favourite) {
+            confirmFavourite(preferences) {
+                viewModel.favorite(viewData.actionableId, true)
+                state?.animate()
+            }
+        } else {
+            viewModel.favorite(viewData.actionableId, false)
+        }
+    }
+
+    override fun onBookmark(viewData: StatusViewData.Concrete, bookmark: Boolean) {
+        viewModel.bookmark(viewData.id, bookmark)
+    }
+
+    override fun onExpandedChange(viewData: StatusViewData.Concrete, expanded: Boolean) {
+        viewModel.changeExpanded(expanded, viewData)
+    }
+
+    override fun onContentHiddenChange(viewData: StatusViewData.Concrete, isShowing: Boolean) {
+        viewModel.changeContentShowing(isShowing, viewData)
+    }
+
+    override fun onContentCollapsedChange(viewData: StatusViewData.Concrete, isCollapsed: Boolean) {
+        viewModel.changeContentCollapsed(isCollapsed, viewData)
+    }
+
+    override fun onVoteInPoll(viewData: StatusViewData.Concrete, pollId: String, choices: List<Int>) {
+        viewModel.voteInPoll(viewData.id, pollId, choices)
+    }
+
+    override fun onShowPollResults(viewData: StatusViewData.Concrete) {
+        viewModel.showPollResults(viewData)
+    }
+
+    override fun changeFilter(viewData: StatusViewData.Concrete, filtered: Boolean) {
+        viewModel.changeFilter(filtered, viewData)
+    }
+
+    override fun onTranslate(viewData: StatusViewData.Concrete) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.translate(viewData)
+                .onFailure {
+                    Snackbar.make(
+                        requireView(),
+                        getString(R.string.ui_error_translate, it.message),
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                }
+        }
+    }
+
+    override fun onUntranslate(viewData: StatusViewData.Concrete) {
+        viewModel.untranslate(viewData)
+    }
+
+    override fun onBlock(block: Boolean, accountId: String, position: Int) {
+        viewModel.block(accountId)
+    }
+
+    override fun onMute(mute: Boolean, accountId: String, position: Int, notifications: Boolean) {
+        viewModel.mute(accountId, notifications, null)
+    }
+
+    override fun onBlock(accountId: String) {
+        viewModel.block(accountId)
+    }
+
+    override fun onMute(accountId: String, hideNotifications: Boolean, duration: Int?) {
+        viewModel.mute(accountId, hideNotifications, duration)
+    }
+
+    override fun onMuteConversation(viewData: StatusViewData.Concrete, mute: Boolean) {
+        viewModel.muteConversation(viewData.actionableId, mute)
+    }
+
+    override fun onDelete(viewData: StatusViewData.Concrete) {
+        viewModel.delete(viewData.id)
+    }
+
+    override fun onRedraft(viewData: StatusViewData.Concrete) {
+        viewModel.redraftStatus(viewData.actionable)
+    }
+
+    override fun onPin(viewData: StatusViewData.Concrete, pin: Boolean) {
+        viewModel.pin(viewData.id, pin)
+    }
+
+    override fun onViewMedia(viewData: StatusViewData.Concrete, attachmentIndex: Int) {
+        requireContext().viewMedia(
+            attachmentIndex,
+            AttachmentViewData.list(viewData),
+        )
+    }
+
+    override fun onViewThread(viewData: StatusViewData.Concrete) {
+        requireContext().viewThread(viewData)
+    }
+
+    override fun onEdit(viewData: StatusViewData.Concrete) {
+        viewModel.editStatus(viewData.actionable)
+    }
+
+    override fun onReply(viewData: StatusViewData.Concrete) {
+        requireContext().reply(viewData, viewModel.activeAccountFlow.value!!)
+    }
+
+    override fun onReport(viewData: StatusViewData.Concrete) {
+        requireContext().report(viewData)
+    }
+
+    override fun onViewAccount(accountId: String) {
+        requireContext().viewAccount(accountId)
+    }
+
+    override fun onViewUrl(url: String) {
+        (requireActivity() as BottomSheetActivity).viewUrl(url)
+    }
+
+    override fun onRespondToFollowRequest(accept: Boolean, accountIdRequestingFollow: String, position: Int) {
+        val notification = notificationsAdapter?.peek(position) ?: return
+        viewModel.respondToFollowRequest(accept, accountIdRequestingFollow = accountIdRequestingFollow, notificationId = notification.id)
+    }
+
+    override fun onViewReport(reportId: String) {
+        requireContext().openLink(
+            "https://${accountManager.activeAccount!!.domain}/admin/reports/$reportId"
+        )
+    }
+
+    override fun onViewTag(tag: String) {
+        requireContext().viewTag(tag)
+    }
+
+    override fun onShowQuote(viewData: StatusViewData.Concrete) {
+        viewModel.showQuote(viewData)
+    }
+
+    override fun removeQuote(viewData: StatusViewData.Concrete) {
+        viewModel.removeQuote(viewData.status)
+    }
+
+    override fun onLoadMore(loadMore: NotificationViewData.LoadMore) {
+        val adapter = this.notificationsAdapter ?: return
+        val items = adapter.snapshot()
+        val position = items.indexOf(loadMore)
+        loadMorePosition = position
+        statusIdBelowLoadMore = items.getOrNull(position + 1)?.id
+        viewModel.loadMore(loadMore.id)
+    }
+
+    private fun confirmClearNotifications() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setMessage(R.string.notification_clear_text)
+            .setPositiveButton(android.R.string.ok) { _: DialogInterface?, _: Int -> clearNotifications() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun clearNotifications() {
+        viewModel.clearNotifications()
+    }
+
+    private fun showFilterMenu() {
+        val notificationTypeList = NotificationChannelData.entries.map { type ->
+            getString(type.title)
+        }
+
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_multiple_choice, notificationTypeList)
+        val window = PopupWindow(requireContext(), null, appcompatR.attr.listPopupWindowStyle)
+        val menuBinding = NotificationsFilterBinding.inflate(LayoutInflater.from(requireContext()), binding.root as ViewGroup, false)
+
+        menuBinding.buttonApply.setOnClickListener {
+            val checkedItems = menuBinding.listView.getCheckedItemPositions()
+            val excludes = NotificationChannelData.entries.filterIndexed { index, _ ->
+                !checkedItems[index, false]
+            }
+            window.dismiss()
+            viewModel.updateNotificationFilters(excludes.toSet())
+        }
+
+        menuBinding.listView.setAdapter(adapter)
+        menuBinding.listView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE)
+
+        NotificationChannelData.entries.forEachIndexed { index, type ->
+            menuBinding.listView.setItemChecked(index, !viewModel.excludes.value.contains(type))
+        }
+
+        window.setContentView(menuBinding.root)
+        window.isFocusable = true
+        window.width = ViewGroup.LayoutParams.WRAP_CONTENT
+        window.height = ViewGroup.LayoutParams.WRAP_CONTENT
+        window.showAsDropDown(binding.buttonFilter)
+    }
+
+    private fun onPreferenceChanged(adapter: NotificationsPagingAdapter, key: String) {
+        when (key) {
+            PrefKeys.MEDIA_PREVIEW_ENABLED -> {
+                val enabled = accountManager.activeAccount!!.mediaPreviewEnabled
+                val oldMediaPreviewEnabled = adapter.mediaPreviewEnabled
+                if (enabled != oldMediaPreviewEnabled) {
+                    adapter.mediaPreviewEnabled = enabled
+                }
+            }
+
+            PrefKeys.SHOW_NOTIFICATIONS_FILTER -> {
+                if (view != null) {
+                    showNotificationsFilterBar = preferences.getBoolean(PrefKeys.SHOW_NOTIFICATIONS_FILTER, true)
+                    updateFilterBarVisibility()
+                }
+            }
+
+            PrefKeys.READING_ORDER -> {
+                readingOrder = ReadingOrder.from(
+                    preferences.getString(PrefKeys.READING_ORDER, null)
+                )
+            }
+        }
+    }
+
+    private fun updateFilterBarVisibility() {
+        val params = binding.swipeRefreshLayout.layoutParams as CoordinatorLayout.LayoutParams
+        if (showNotificationsFilterBar) {
+            binding.appBarOptions.setExpanded(true, false)
+            binding.appBarOptions.show()
+            // Set content behaviour to hide filter on scroll
+            params.behavior = AppBarLayout.ScrollingViewBehavior()
+        } else {
+            binding.appBarOptions.setExpanded(false, false)
+            binding.appBarOptions.hide()
+            // Clear behaviour to hide app bar
+            params.behavior = null
+        }
+    }
+
+    private fun updateReadingPositionForOldestFirst(adapter: NotificationsPagingAdapter) {
+        var position = loadMorePosition ?: return
+        val notificationIdBelowLoadMore = statusIdBelowLoadMore ?: return
+
+        var notification: NotificationViewData?
+        while (adapter.peek(position).let {
+                notification = it
+                it != null
+            }
+        ) {
+            if (notification?.id == notificationIdBelowLoadMore) {
+                val lastVisiblePosition =
+                    (binding.recyclerView.layoutManager as LinearLayoutManager).findLastVisibleItemPosition()
+                if (position > lastVisiblePosition) {
+                    binding.recyclerView.scrollToPosition(position)
+                }
+                break
+            }
+            position++
+        }
+        loadMorePosition = null
+    }
+
+    override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
+        menuInflater.inflate(R.menu.fragment_notifications, menu)
+    }
+
+    override fun onMenuItemSelected(menuItem: MenuItem) = when (menuItem.itemId) {
+        R.id.action_refresh -> {
+            binding.swipeRefreshLayout.isRefreshing = true
+            onRefresh()
+            true
+        }
+        R.id.action_edit_notification_filter -> {
+            showFilterMenu()
+            true
+        }
+        R.id.action_clear_notifications -> {
+            confirmClearNotifications()
+            true
+        }
+        else -> false
+    }
+
+    companion object {
+        fun newInstance() = NotificationsFragment()
+    }
+}

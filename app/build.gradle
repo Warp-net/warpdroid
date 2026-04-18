@@ -1,0 +1,252 @@
+import app.cash.licensee.SpdxId
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.google.ksp)
+    alias(libs.plugins.hilt.android)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.parcelize)
+    alias(libs.plugins.licensee)
+    alias(libs.plugins.play.publisher)
+}
+
+apply from: 'getGitSha.gradle'
+
+final def gitSha = ext.getGitSha()
+
+// The app name
+final def APP_NAME = "Tusky"
+// The application id. Must be unique, e.g. based on your domain
+final def APP_ID = "com.keylesspalace.tusky"
+// url of a custom app logo. Recommended size at least 600x600. Keep empty to use the Tusky elephant friend.
+final def CUSTOM_LOGO_URL = ""
+// e.g. mastodon.social. Keep empty to not suggest any instance on the signup screen
+final def CUSTOM_INSTANCE = ""
+// link to your support account. Will be linked on the about page when not empty.
+final def SUPPORT_ACCOUNT_URL = "https://mastodon.social/@Tusky"
+
+android {
+    compileSdk = 36
+    namespace = "com.keylesspalace.tusky"
+    defaultConfig {
+        applicationId = APP_ID
+        namespace = "com.keylesspalace.tusky"
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 142
+        versionName = "32.2"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables.useSupportLibrary = true
+
+        resValue "string", "app_name", APP_NAME
+
+        buildConfigField("String", "CUSTOM_LOGO_URL", "\"$CUSTOM_LOGO_URL\"")
+        buildConfigField("String", "CUSTOM_INSTANCE", "\"$CUSTOM_INSTANCE\"")
+        buildConfigField("String", "SUPPORT_ACCOUNT_URL", "\"$SUPPORT_ACCOUNT_URL\"")
+    }
+    signingConfigs {
+        test {
+            keyAlias System.getenv("KEY_ALIAS_TEST")
+            keyPassword System.getenv("KEY_PASSWORD_TEST")
+            storeFile file("Tusky.jks")
+            storePassword System.getenv("KEYSTORE_PASSWORD")
+        }
+        release {
+            keyAlias System.getenv("KEY_ALIAS_RELEASE")
+            keyPassword System.getenv("KEY_PASSWORD_RELEASE")
+            storeFile file("Tusky.jks")
+            storePassword System.getenv("KEYSTORE_PASSWORD")
+        }
+    }
+    buildTypes {
+        debug {
+            isDefault true
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles 'proguard-rules.pro'
+
+            kotlinOptions {
+                freeCompilerArgs = [
+                    "-Xno-param-assertions",
+                    "-Xno-call-assertions",
+                    "-Xno-receiver-assertions"
+                ]
+            }
+        }
+    }
+
+    flavorDimensions += "color"
+    productFlavors {
+        blue {
+            signingConfig = signingConfigs.release
+        }
+        green {
+            resValue "string", "app_name", APP_NAME + " Test"
+            applicationIdSuffix ".test"
+            versionNameSuffix "-" + gitSha
+            isDefault true
+            signingConfig = signingConfigs.test
+        }
+    }
+
+    kotlin {
+        compilerOptions {
+            freeCompilerArgs = ["-Xannotation-default-target=param-property"]
+        }
+    }
+
+    lint {
+        lintConfig file("lint.xml")
+        // Regenerate by deleting the file and running `./gradlew app:lintGreenDebug`
+        baseline = file("lint-baseline.xml")
+    }
+
+    buildFeatures {
+        compose true
+        buildConfig true
+        resValues true
+        viewBinding true
+    }
+
+    testOptions {
+        unitTests {
+            returnDefaultValues = true
+            includeAndroidResources = true
+        }
+        unitTests.all {
+            systemProperty 'robolectric.logging.enabled', 'true'
+            systemProperty 'robolectric.lazyload', 'ON'
+        }
+    }
+    sourceSets {
+        // workaround to have migrations available in unit tests
+        // https://github.com/robolectric/robolectric/issues/3928#issuecomment-395309991
+        debug.assets.srcDirs += files("$projectDir/schemas".toString())
+    }
+
+    // Exclude unneeded files added by libraries
+    packagingOptions.resources.excludes += [
+        'LICENSE_OFL',
+        'LICENSE_UNICODE',
+        'META-INF/androidx/**',
+        'META-INF/NOTICE.md',
+        'DebugProbesKt.bin',
+        'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+    ]
+
+    bundle {
+        language {
+            // bundle all languages in every apk so the dynamic language switching works
+            enableSplit = false
+        }
+    }
+    dependenciesInfo {
+        includeInApk false
+        includeInBundle false
+    }
+    applicationVariants.configureEach { variant ->
+        variant.outputs.configureEach {
+            outputFileName = "Tusky_${variant.versionName}_${variant.versionCode}_${gitSha}_" +
+                "${variant.flavorName}_${buildType.name}.apk"
+        }
+    }
+
+    playConfigs {
+        register("green") {
+            track.set("production")
+        }
+        register("blue") {
+            track.set("internal")
+        }
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.generateKotlin", "true")
+    arg("room.incremental", "true")
+}
+
+licensee {
+    allow(SpdxId.Apache_20)
+    allow(SpdxId.MIT)
+    allow(SpdxId.BSD_3_Clause)
+    allowUrl('https://github.com/AOMediaCodec/libavif/blob/master/LICENSE')
+}
+
+configurations {
+    // JNI-only libraries don't play nicely with Robolectric
+    // see https://github.com/tuskyapp/Tusky/pull/3367
+    testImplementation.exclude group: "org.conscrypt", module: "conscrypt-android"
+    testRuntime.exclude group: "org.conscrypt", module: "conscrypt-android"
+}
+
+// library versions are in PROJECT_ROOT/gradle/libs.versions.toml
+dependencies {
+    implementation libs.kotlinx.coroutines.android
+
+    implementation libs.bundles.androidx
+    implementation libs.bundles.room
+    ksp libs.androidx.room.compiler
+
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.material
+    implementation libs.androidx.compose.ui.tooling.preview
+    debugImplementation libs.androidx.compose.ui.tooling
+
+    implementation libs.android.material
+
+    implementation libs.bundles.moshi
+    ksp libs.moshi.kotlin.codegen
+
+    implementation libs.bundles.retrofit
+    implementation libs.networkresult.calladapter
+
+    implementation libs.bundles.okhttp
+    implementation libs.okio
+
+    implementation libs.bundles.coil
+
+    implementation libs.conscrypt.android
+
+    implementation libs.bundles.glide
+    ksp libs.glide.compiler
+
+    implementation libs.hilt.android
+    ksp libs.hilt.compiler
+    implementation libs.androidx.hilt.work
+    ksp libs.androidx.hilt.compiler
+
+    implementation libs.sparkbutton.compose
+
+    implementation libs.touchimageview
+
+    implementation libs.bundles.material.drawer
+
+    implementation libs.image.cropper
+
+    implementation libs.bundles.filemojicompat
+
+    implementation libs.bundles.unifiedpush
+
+    implementation libs.bundles.xmldiff
+
+    implementation(libs.ktxml)
+
+    testImplementation libs.androidx.test.junit
+    testImplementation libs.robolectric
+    testImplementation libs.bundles.mockito
+    testImplementation libs.mockwebserver
+    testImplementation libs.androidx.core.testing
+    testImplementation libs.androidx.room.testing
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.androidx.work.testing
+    testImplementation libs.androidx.paging.test
+    testImplementation libs.turbine
+
+    testImplementation libs.androidx.compose.test
+    debugImplementation libs.androidx.compose.test.manifest
+}
