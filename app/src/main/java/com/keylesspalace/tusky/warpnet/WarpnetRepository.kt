@@ -175,6 +175,37 @@ class WarpnetRepository @Inject constructor(
         return hydrateStatuses(page.replies)
     }
 
+    /**
+     * Walk the parent chain upward from [tweetId], fetching each ancestor
+     * via PUBLIC_GET_TWEET. Returns ancestors ordered root-first so the
+     * thread view can render oldest-to-newest.
+     *
+     * [maxDepth] bounds the walk to defend against malformed cycles and
+     * runaway threads; beyond it the chain is silently truncated.
+     */
+    suspend fun getAncestors(tweetId: String, userId: String, maxDepth: Int = 32): List<Status> {
+        val chain = mutableListOf<Status>()
+        var current = runCatching { fetchTweetRaw(tweetId, userId) }.getOrNull() ?: return emptyList()
+        val cache = mutableMapOf<String, WarpnetUser>()
+        var steps = 0
+        while (!current.parentId.isNullOrEmpty() && steps < maxDepth) {
+            val parent = runCatching { fetchTweetRaw(current.parentId!!, userId) }.getOrNull() ?: break
+            chain += parent.toStatus(resolveUser(parent.userId, cache))
+            current = parent
+            steps++
+        }
+        return chain.asReversed()
+    }
+
+    private suspend fun fetchTweetRaw(tweetId: String, userId: String): WarpnetTweet {
+        val raw = client.request(
+            ProtocolIds.PUBLIC_GET_TWEET,
+            getTweetAdapter.toJson(GetTweetEvent(tweetId = tweetId, userId = userId)),
+        )
+        return tweetAdapter.fromJson(raw)
+            ?: throw IllegalStateException("fetchTweetRaw returned empty body for $tweetId")
+    }
+
     // -----------------------------------------------------------------
     // Posting
     // -----------------------------------------------------------------

@@ -324,12 +324,9 @@ class MastodonApi @Inject constructor(
     suspend fun statusSource(statusId: String): NetworkResult<StatusSource> = stubFailure("statusSource")
 
     suspend fun statusContext(statusId: String): NetworkResult<StatusContext> = result {
-        // Warpnet exposes replies only (descendants); Mastodon's ancestors
-        // chain has no transport-level equivalent, so we return an empty
-        // ancestor list and let the UI render the focused status plus its
-        // replies.
+        val userId = accountManager.activeAccount?.accountId.orEmpty()
         StatusContext(
-            ancestors = emptyList(),
+            ancestors = warpnet.getAncestors(tweetId = statusId, userId = userId),
             descendants = warpnet.getReplies(rootId = statusId),
         )
     }
