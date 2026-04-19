@@ -9,9 +9,12 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.text.InputType
 import android.view.View
+import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -63,7 +66,7 @@ class PairingActivity : AppCompatActivity() {
         if (granted) {
             startCamera()
         } else {
-            showFatalMessage(getString(R.string.warpnet_pair_camera_denied))
+            showManualInput()
         }
     }
 
@@ -78,6 +81,14 @@ class PairingActivity : AppCompatActivity() {
         connectButton = findViewById(R.id.connectButton)
         cancelButton = findViewById(R.id.cancelButton)
         scanPrompt = findViewById(R.id.scanPrompt)
+
+        // The manifest marks camera hardware as optional, so the scanner must
+        // handle cameraless devices too. Skip the permission dance and jump
+        // straight to manual input when there is nothing to point at.
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
+            showManualInput()
+            return
+        }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
@@ -98,7 +109,15 @@ class PairingActivity : AppCompatActivity() {
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
-            val provider = providerFuture.get()
+            val provider = try {
+                providerFuture.get()
+            } catch (e: Exception) {
+                // Camera service unavailable (emulators, cameraless devices
+                // where the feature check didn't catch it). Fall back to
+                // manual input so the pairing flow isn't a dead-end.
+                showManualInput()
+                return@addListener
+            }
             cameraProvider = provider
 
             val preview = Preview.Builder().build().also {
@@ -112,14 +131,56 @@ class PairingActivity : AppCompatActivity() {
             analyzer = qrAnalyzer
             imageAnalysis.setAnalyzer(cameraExecutor, qrAnalyzer)
 
-            provider.unbindAll()
-            provider.bindToLifecycle(
-                this,
-                CameraSelector.DEFAULT_BACK_CAMERA,
-                preview,
-                imageAnalysis,
-            )
+            try {
+                provider.unbindAll()
+                provider.bindToLifecycle(
+                    this,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    imageAnalysis,
+                )
+            } catch (e: IllegalArgumentException) {
+                // No back camera to bind to (front-only devices).
+                showManualInput()
+            } catch (e: IllegalStateException) {
+                showManualInput()
+            }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun showManualInput() {
+        scanPrompt.visibility = View.GONE
+        previewView.visibility = View.GONE
+        val input = EditText(this).apply {
+            setHint(R.string.warpnet_pair_manual_hint)
+            isSingleLine = false
+            maxLines = 10
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.warpnet_pair_manual_title)
+            .setMessage(R.string.warpnet_pair_manual_body)
+            .setView(input)
+            .setCancelable(false)
+            .setPositiveButton(R.string.warpnet_pair_manual_submit) { _, _ ->
+                handleManualInput(input.text.toString())
+            }
+            .setNegativeButton(R.string.action_cancel) { _, _ -> finish() }
+            .show()
+    }
+
+    private fun handleManualInput(raw: String) {
+        when (val result = validator.validate(raw)) {
+            is ValidationResult.Valid -> showConfirmation(result.authNodeInfo, result.rawJson)
+            is ValidationResult.Invalid -> {
+                Toast.makeText(
+                    this,
+                    getString(R.string.warpnet_pair_invalid_qr, result.reason),
+                    Toast.LENGTH_LONG,
+                ).show()
+                showManualInput()
+            }
+        }
     }
 
     private fun onQrScanned(raw: String) {
