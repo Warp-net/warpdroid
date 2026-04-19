@@ -95,3 +95,11 @@ dependencies {
     implementation libs.bundles.moshi
     ksp libs.moshi.kotlin.codegen
 }
+
+// AGP forbids direct local .aar file dependencies when building an AAR
+// publication. The :app module consumes this library via a project dependency,
+// which uses per-variant intermediate artifacts and does not require the
+// bundled AAR. Disable the bundling tasks so `./gradlew build` succeeds.
+tasks.matching { it.name.startsWith("bundle") && it.name.endsWith("Aar") }.configureEach {
+    enabled = false
+}
