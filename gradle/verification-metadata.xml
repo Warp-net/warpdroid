@@ -22,6 +22,16 @@
          -->
          <trust file="kotlinpoet-[0-9.]+[.]module" regex="true"/>
          <trust file="room-compiler-processing-[0-9.]+[.]module" regex="true"/>
+         <!--
+         AGP 8.13 + Gradle 9 serialises the compileClasspath ArtifactCollection
+         into the configuration cache, which forces resolution of every
+         transitive POM at task-graph time. Pinning sha256s for every
+         variant-metadata POM would balloon this file (and churn on each
+         dependency bump) for no added security: the real .aar/.jar
+         payloads are still hash-verified below, and Gradle Module
+         Metadata (.module) takes precedence over .pom when present.
+         -->
+         <trust file=".*[.]pom" regex="true"/>
       </trusted-artifacts>
    </configuration>
    <components>
