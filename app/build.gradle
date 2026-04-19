@@ -87,14 +87,18 @@ android {
     flavorDimensions += "color"
     productFlavors {
         blue {
-            signingConfig = signingConfigs.release
+            if (file("Tusky.jks").exists()) {
+                signingConfig = signingConfigs.release
+            }
         }
         green {
             resValue "string", "app_name", APP_NAME + " Test"
             applicationIdSuffix ".test"
             versionNameSuffix "-" + gitSha
             isDefault true
-            signingConfig = signingConfigs.test
+            if (file("Tusky.jks").exists()) {
+                signingConfig = signingConfigs.test
+            }
         }
     }
 
