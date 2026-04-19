@@ -28,13 +28,12 @@ android {
     }
 }
 
-// See app/build.gradle for the rationale behind vendoring the AAR and
-// verifying its checksum. The identical tasks live in this module because
-// warpnet.aar is this module's only native dependency.
+// warpnet.aar is this module's only native dependency and is vendored in
+// libs/. buildWarpnetAar regenerates it from a sibling android-binding
+// checkout via gomobile; there is no checksum pinning.
 
 ext {
     warpnetAarFile = file("libs/warpnet.aar")
-    warpnetAarChecksumFile = file("libs/warpnet.aar.sha256")
     warpnetBindingDir = providers
         .environmentVariable("WARPNET_ANDROID_BINDING_DIR")
         .orElse(file("${rootDir}/../android-binding").absolutePath)
@@ -64,32 +63,6 @@ tasks.register("buildWarpnetAar", Exec) {
         }
     }
 }
-
-tasks.register("verifyWarpnetAarChecksum") {
-    group = "warpnet"
-    description = "Fails the build if libs/warpnet.aar drifts from the pinned SHA-256."
-    doLast {
-        if (!warpnetAarFile.exists()) {
-            throw new GradleException("Missing ${warpnetAarFile}. Run :warpnet-transport:buildWarpnetAar.")
-        }
-        def expected = warpnetAarChecksumFile.text.trim().split(/\s+/)[0]
-        def actual = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(warpnetAarFile.bytes)
-            .collect { String.format('%02x', it) }
-            .join('')
-        if (expected != actual) {
-            throw new GradleException(
-                "warpnet.aar checksum mismatch.\n  expected: ${expected}\n  actual:   ${actual}\n" +
-                "Either restore the pinned binary, or intentionally update " +
-                "libs/warpnet.aar.sha256 after reviewing the new AAR."
-            )
-        }
-    }
-}
-
-// The checksum verification runs in CI as a shell step before Gradle is
-// invoked (see .github/workflows/build.yml) so it does not block local
-// developer builds when the pinned AAR is intentionally being rebuilt.
 
 dependencies {
     api files("libs/warpnet.aar")

@@ -23,6 +23,9 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.edit
 import androidx.hilt.work.HiltWorkerFactory
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import coil3.ImageLoader
@@ -42,8 +45,13 @@ import de.c1710.filemojicompat_ui.helpers.EmojiPackHelper
 import de.c1710.filemojicompat_ui.helpers.EmojiPreference
 import java.security.Security
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import org.conscrypt.Conscrypt
+import site.warpnet.transport.WarpnetClient
 
 @HiltAndroidApp
 class TuskyApplication :
@@ -65,6 +73,11 @@ class TuskyApplication :
 
     @Inject
     lateinit var okHttpClient: OkHttpClient
+
+    @Inject
+    lateinit var warpnetClient: WarpnetClient
+
+    private val transportScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         // Uncomment me to get StrictMode violation logs
@@ -120,6 +133,22 @@ class TuskyApplication :
         localeManager.setLocale()
 
         // Warpdroid: no local cache to prune — PruneCacheWorker removed with Room.
+
+        // Drive the libp2p host through background/foreground transitions so
+        // open streams don't hold the radio awake when the user leaves the
+        // app, and reconnect to known peers when they come back. The binding
+        // is a no-op until :initialise has run.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    transportScope.launch { warpnetClient.resume() }
+                }
+
+                override fun onStop(owner: LifecycleOwner) {
+                    transportScope.launch { warpnetClient.pause() }
+                }
+            },
+        )
     }
 
     override val workManagerConfiguration: Configuration

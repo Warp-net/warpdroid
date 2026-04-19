@@ -90,6 +90,7 @@ androidx-hilt-compiler = { module = "androidx.hilt:hilt-compiler", version.ref =
 androidx-hilt-work = { module = "androidx.hilt:hilt-work", version.ref = "androidx-hilt" }
 androidx-lifecycle-viewmodel-ktx = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
+androidx-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.ref = "androidx-lifecycle" }
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "androidx-media3" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "androidx-media3" }
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "androidx-media3" }
@@ -149,7 +150,7 @@ ktxml = { module = "org.kobjects.ktxml:core", version.ref = "ktxml" }
 [bundles]
 androidx = ["androidx-core-ktx", "androidx-appcompat", "androidx-fragment-ktx", "androidx-browser", "androidx-swiperefreshlayout",
     "androidx-recyclerview", "androidx-exifinterface", "androidx-cardview", "androidx-preference-ktx", "androidx-sharetarget",
-    "androidx-emoji2-core", "androidx-emoji2-views-core", "androidx-emoji2-view-helper", "androidx-lifecycle-viewmodel-ktx", "androidx-lifecycle-viewmodel-compose",
+    "androidx-emoji2-core", "androidx-emoji2-views-core", "androidx-emoji2-view-helper", "androidx-lifecycle-viewmodel-ktx", "androidx-lifecycle-viewmodel-compose", "androidx-lifecycle-process",
     "androidx-constraintlayout", "androidx-paging-compose", "androidx-paging-runtime-ktx", "androidx-viewpager2", "androidx-work-runtime-ktx",
     "androidx-core-splashscreen", "androidx-activity", "androidx-activity-compose", "androidx-media3-exoplayer", "androidx-media3-datasource-okhttp",
     "androidx-media3-ui", "androidx-drawerlayout", "androidx-constraintlayout-compose"]
