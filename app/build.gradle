@@ -168,6 +168,13 @@ licensee {
     allow(SpdxId.MIT)
     allow(SpdxId.BSD_3_Clause)
     allowUrl('https://github.com/AOMediaCodec/libavif/blob/master/LICENSE')
+    // Google Play Services (play-services-base/basement/tasks, odml-image)
+    // publish under the Android SDK Terms of Service rather than an SPDX
+    // license. ML Kit artifacts (barcode-scanning and its transitives)
+    // publish under the ML Kit Terms. Both are required for the on-device
+    // QR scanner; allow the canonical URLs rather than fail the build.
+    allowUrl('https://developer.android.com/studio/terms.html')
+    allowUrl('https://developers.google.com/ml-kit/terms')
 }
 
 // ML Kit's barcode scanner pulls the unified com.google.crypto.tink:tink
