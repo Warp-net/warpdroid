@@ -55,10 +55,10 @@ class WarpnetClient(
     suspend fun initialise(config: WarpnetConfig) = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (_state.value != ConnectionState.Uninitialised) return@withLock
+            // Preflight checks throw without mutating state so the caller can
+            // retry initialise() with corrected inputs.
             if (config.bootstrapAddrs.isEmpty()) {
-                val failure = WarpnetException.TransportFailure("bootstrap nodes required")
-                _state.value = ConnectionState.Failed(failure)
-                throw failure
+                throw WarpnetException.TransportFailure("bootstrap nodes required")
             }
             val err = binding.initialize(
                 privKeyHex = config.privKeyHex,
@@ -97,26 +97,31 @@ class WarpnetClient(
      * wrapping is done here.
      */
     suspend fun request(protocolId: String, bodyJson: String): String = withContext(Dispatchers.IO) {
-        if (_state.value !is ConnectionState.Connected) {
-            throw WarpnetException.NotConnected()
+        // Serialise stream() with every other binding call so pause/resume
+        // can't tear a connection out from under an in-flight request and
+        // race the Go singleton's internal state.
+        mutex.withLock {
+            if (_state.value !is ConnectionState.Connected) {
+                throw WarpnetException.NotConnected()
+            }
+
+            val envelope = WarpnetEnvelope.unsigned(
+                body = bodyJson,
+                nodeId = signer.peerId,
+                path = protocolId,
+                timestamp = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
+            ).copy(signature = signer.sign(bodyJson))
+
+            val requestJson = envelopeAdapter.toJson(envelope)
+            val raw = binding.stream(protocolId, requestJson)
+
+            // The binding returns the error message directly (no JSON wrapping)
+            // when the stream itself fails — e.g. peer disconnected. Distinguish
+            // by attempting to parse a ResponseError; if that fails assume the
+            // string is a ProtocolError body.
+            throwIfErrorResponse(raw)
+            raw
         }
-
-        val envelope = WarpnetEnvelope.unsigned(
-            body = bodyJson,
-            nodeId = signer.peerId,
-            path = protocolId,
-            timestamp = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
-        ).copy(signature = signer.sign(bodyJson))
-
-        val requestJson = envelopeAdapter.toJson(envelope)
-        val raw = binding.stream(protocolId, requestJson)
-
-        // The binding returns the error message directly (no JSON wrapping)
-        // when the stream itself fails — e.g. peer disconnected. Distinguish
-        // by attempting to parse a ResponseError; if that fails assume the
-        // string is a ProtocolError body.
-        throwIfErrorResponse(raw)
-        raw
     }
 
     /**
