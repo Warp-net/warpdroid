@@ -196,25 +196,11 @@ class PairingActivity : AppCompatActivity() {
                         Toast.LENGTH_LONG,
                     ).show()
                     // Re-arm the analyzer so the user can scan again without
-                    // leaving the activity.
+                    // leaving the activity. startCamera() builds a fresh
+                    // QrCodeAnalyzer and rebinds inside the same try/catch
+                    // fallback used on first start.
                     analyzer?.close()
-                    analyzer = QrCodeAnalyzer { payload -> onQrScanned(payload) }.also { next ->
-                        val provider = cameraProvider ?: return@runOnUiThread
-                        provider.unbindAll()
-                        val preview = Preview.Builder().build().also {
-                            it.surfaceProvider = previewView.surfaceProvider
-                        }
-                        val imageAnalysis = ImageAnalysis.Builder()
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .build()
-                        imageAnalysis.setAnalyzer(cameraExecutor, next)
-                        provider.bindToLifecycle(
-                            this,
-                            CameraSelector.DEFAULT_BACK_CAMERA,
-                            preview,
-                            imageAnalysis,
-                        )
-                    }
+                    startCamera()
                 }
             }
         }

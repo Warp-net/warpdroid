@@ -23,8 +23,8 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="48dp"
         android:padding="12dp"
-        android:background="#99000000"
-        android:textColor="#FFFFFF"
+        android:background="?attr/colorSurfaceVariant"
+        android:textColor="?attr/colorOnSurfaceVariant"
         android:text="@string/warpnet_pair_scan_prompt"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -51,7 +51,7 @@
                 android:id="@+id/messageTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textAppearance="?attr/textAppearanceHeadline6"
+                android:textAppearance="?attr/textAppearanceTitleLarge"
                 android:paddingBottom="12dp"
                 tools:text="Connect to my node" />
 
@@ -59,7 +59,7 @@
                 android:id="@+id/messageBody"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textAppearance="?attr/textAppearanceBody2"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:paddingBottom="24dp"
                 tools:text="Owner: alice\nNode: 12D…abc\nAddress: /ip4/10.0.0.2/tcp/4242" />
 

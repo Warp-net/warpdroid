@@ -77,6 +77,7 @@ import com.keylesspalace.tusky.components.accountlist.AccountListActivity
 import com.keylesspalace.tusky.components.announcements.AnnouncementsActivity
 import com.keylesspalace.tusky.components.compose.ComposeActivity
 import com.keylesspalace.tusky.components.compose.ComposeActivity.Companion.canHandleMimeType
+import com.keylesspalace.tusky.components.pairing.PairedNodeStore
 import com.keylesspalace.tusky.components.preference.PreferencesActivity
 import com.keylesspalace.tusky.components.scheduled.ScheduledStatusActivity
 import com.keylesspalace.tusky.components.search.SearchActivity
@@ -143,7 +144,7 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
     lateinit var draftsAlert: DraftsAlert
 
     @Inject
-    lateinit var pairedNodeStore: com.keylesspalace.tusky.components.pairing.PairedNodeStore
+    lateinit var pairedNodeStore: PairedNodeStore
 
     private val viewModel: MainViewModel by viewModels()
 

@@ -35,14 +35,20 @@ class QrCodeAnalyzer(
     )
     private val fired = AtomicBoolean(false)
 
+    // Gate so only one ML Kit decode is in flight at a time. Without this,
+    // a fast camera feed can queue many scanner.process() Tasks in parallel
+    // even though we only need one successful result.
+    private val processing = AtomicBoolean(false)
+
     @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(image: ImageProxy) {
-        if (fired.get()) {
+        if (fired.get() || !processing.compareAndSet(false, true)) {
             image.close()
             return
         }
         val media = image.image
         if (media == null) {
+            processing.set(false)
             image.close()
             return
         }
@@ -54,7 +60,10 @@ class QrCodeAnalyzer(
                     onResult(payload)
                 }
             }
-            .addOnCompleteListener { image.close() }
+            .addOnCompleteListener {
+                processing.set(false)
+                image.close()
+            }
     }
 
     fun close() {

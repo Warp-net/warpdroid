@@ -44,12 +44,19 @@ class PairingCoordinator @Inject constructor(
         // stream.
         val candidates = paired.addresses.map { "$it/p2p/${paired.pinnedPeerId}" }
         val bootstrap = paired.bootstrapAddrs.ifEmpty { candidates }
+        // Seed the transport with the first syntactically-dialable candidate
+        // rather than candidates.first(), which could still be an unusable
+        // multiaddr when only a later entry passed the validator check.
+        val dialable = candidates.firstOrNull { addr ->
+            val bare = addr.substringBeforeLast("/p2p/")
+            bare.startsWith("/") && bare.trim('/').isNotEmpty()
+        } ?: candidates.first()
 
         val config = WarpnetConfig(
             privKeyHex = identityStore.loadOrCreateHex(),
             pskHex = paired.identity.psk,
             bootstrapAddrs = bootstrap,
-            desktopPeerAddr = candidates.first(),
+            desktopPeerAddr = dialable,
             network = paired.network,
         )
 
