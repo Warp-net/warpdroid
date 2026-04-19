@@ -1,0 +1,70 @@
+/*
+ * Warpdroid - a Warpnet Android client.
+ * Copyright (C) 2026 Warpdroid contributors.
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+package com.keylesspalace.tusky.components.pairing
+
+import com.squareup.moshi.JsonDataException
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.adapter
+import site.warpnet.transport.dto.AuthNodeInfo
+
+/**
+ * Validates the JSON decoded from a scanned QR. The raw bytes are kept
+ * alongside the parsed DTO so the pairing handshake can echo them back to
+ * the fat node byte-for-byte — avoiding any re-encoding drift that might
+ * break the token comparison in `warpnet/core/handler/pair.go`.
+ *
+ * Hash is deliberately NOT verified here (per pairing spec).
+ */
+sealed class ValidationResult {
+    data class Valid(
+        val authNodeInfo: AuthNodeInfo,
+        val rawJson: String,
+    ) : ValidationResult()
+
+    data class Invalid(val reason: String) : ValidationResult()
+}
+
+@OptIn(ExperimentalStdlibApi::class)
+class AuthNodeInfoValidator(moshi: Moshi) {
+    private val adapter = moshi.adapter<AuthNodeInfo>()
+
+    fun validate(rawJson: String): ValidationResult {
+        if (rawJson.isBlank()) return ValidationResult.Invalid("empty QR payload")
+        val parsed = try {
+            adapter.fromJson(rawJson)
+        } catch (e: JsonDataException) {
+            return ValidationResult.Invalid("malformed pairing JSON: ${e.message}")
+        } catch (e: java.io.IOException) {
+            return ValidationResult.Invalid("malformed pairing JSON: ${e.message}")
+        } ?: return ValidationResult.Invalid("empty pairing JSON")
+
+        val missing = mutableListOf<String>()
+        if (parsed.identity.token.isBlank()) missing += "identity.token"
+        if (parsed.identity.psk.isBlank()) missing += "identity.psk"
+        if (parsed.identity.owner.nodeId.isBlank()) missing += "identity.owner.node_id"
+        if (parsed.identity.owner.userId.isBlank()) missing += "identity.owner.user_id"
+        if (parsed.identity.owner.username.isBlank()) missing += "identity.owner.username"
+        if (parsed.nodeInfo.id.isBlank()) missing += "node_info.node_id"
+        if (parsed.nodeInfo.addresses.isEmpty()) missing += "node_info.addresses"
+        if (parsed.nodeInfo.network.isBlank()) missing += "node_info.network"
+        if (missing.isNotEmpty()) {
+            return ValidationResult.Invalid("missing fields: ${missing.joinToString()}")
+        }
+
+        // A syntactically valid multiaddr must start with "/" and have at
+        // least one segment. go-libp2p's parser does the final check on the
+        // desktop side; this is the minimum-viable prefilter so we don't
+        // even bother dialling obvious garbage.
+        val hasDialable = parsed.nodeInfo.addresses.any {
+            it.startsWith("/") && it.trim('/').isNotEmpty()
+        }
+        if (!hasDialable) {
+            return ValidationResult.Invalid("no parseable multiaddr in node_info.addresses")
+        }
+
+        return ValidationResult.Valid(parsed, rawJson)
+    }
+}

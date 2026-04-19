@@ -77,6 +77,7 @@ import com.keylesspalace.tusky.components.accountlist.AccountListActivity
 import com.keylesspalace.tusky.components.announcements.AnnouncementsActivity
 import com.keylesspalace.tusky.components.compose.ComposeActivity
 import com.keylesspalace.tusky.components.compose.ComposeActivity.Companion.canHandleMimeType
+import com.keylesspalace.tusky.components.pairing.PairedNodeStore
 import com.keylesspalace.tusky.components.preference.PreferencesActivity
 import com.keylesspalace.tusky.components.scheduled.ScheduledStatusActivity
 import com.keylesspalace.tusky.components.search.SearchActivity
@@ -142,6 +143,9 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
     @Inject
     lateinit var draftsAlert: DraftsAlert
 
+    @Inject
+    lateinit var pairedNodeStore: PairedNodeStore
+
     private val viewModel: MainViewModel by viewModels()
 
     private val binding by viewBinding(ActivityMainBinding::inflate)
@@ -187,6 +191,15 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
             intent.hasCategory(Intent.CATEGORY_LAUNCHER) &&
             intent.action == Intent.ACTION_MAIN
         ) {
+            finish()
+            return
+        }
+
+        // If no fat-node pairing yet, bounce to the QR scanner. The returning
+        // PairingActivity clears the task, so this branch only fires once per
+        // cold install (or after "Forget this node").
+        if (pairedNodeStore.load() == null) {
+            startActivity(Intent(this, com.keylesspalace.tusky.components.pairing.PairingActivity::class.java))
             finish()
             return
         }

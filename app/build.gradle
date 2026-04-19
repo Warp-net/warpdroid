@@ -154,10 +154,9 @@ android {
 
 // No androidTest sources exist in this project. Keeping the variant enabled
 // causes AGP 8.13.2 + Gradle 9.2 to serialize the androidTest compile
-// classpath for :app:generateXxxAndroidTestLintModel, which both trips a
-// known config-cache serialization bug (aarOrAsar ArtifactCollection) and
-// forces download of dozens of .pom files not pinned in
-// gradle/verification-metadata.xml. Disable the variant at source.
+// classpath for :app:generateXxxAndroidTestLintModel, tripping a known
+// config-cache serialization bug (aarOrAsar ArtifactCollection). Disable
+// the variant at source.
 androidComponents {
     beforeVariants(selector().all()) { variantBuilder ->
         variantBuilder.enableAndroidTest = false
@@ -169,6 +168,23 @@ licensee {
     allow(SpdxId.MIT)
     allow(SpdxId.BSD_3_Clause)
     allowUrl('https://github.com/AOMediaCodec/libavif/blob/master/LICENSE')
+    // Google Play Services (play-services-base/basement/tasks, odml-image)
+    // publish under the Android SDK Terms of Service rather than an SPDX
+    // license. ML Kit artifacts (barcode-scanning and its transitives)
+    // publish under the ML Kit Terms. Both are required for the on-device
+    // QR scanner; allow the canonical URLs rather than fail the build.
+    allowUrl('https://developer.android.com/studio/terms.html')
+    allowUrl('https://developers.google.com/ml-kit/terms')
+}
+
+// ML Kit's barcode scanner pulls the unified com.google.crypto.tink:tink
+// JVM artifact (1.17.0), which fully overlaps with the legacy
+// com.google.crypto.tink:tink-android (1.8.0) that androidx.security-crypto
+// 1.1.0 requires. Only tink-android ships the Android-Keystore integration
+// (AndroidKeysetManager) used by EncryptedSharedPreferences, so keep it and
+// globally drop the unified JVM copy to avoid "Duplicate class" R8 errors.
+configurations.configureEach {
+    exclude group: "com.google.crypto.tink", module: "tink"
 }
 
 // library versions are in PROJECT_ROOT/gradle/libs.versions.toml
@@ -180,6 +196,15 @@ dependencies {
     implementation libs.kotlinx.coroutines.android
 
     implementation libs.bundles.androidx
+
+    // QR pairing: CameraX preview + on-device ML Kit barcode scanner so the
+    // app degrades to a manual flow rather than hard-failing on devices
+    // without Play Services.
+    implementation libs.bundles.camerax
+    implementation libs.mlkit.barcode.scanning
+    // Hardware-backed EncryptedSharedPreferences for the persisted
+    // Identity + pinned fat-node peer ID.
+    implementation libs.androidx.security.crypto
 
     implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.material
@@ -224,16 +249,6 @@ dependencies {
     implementation libs.bundles.xmldiff
 
     implementation(libs.ktxml)
-}
-
-// Hilt's XProcessing framework transitively pulls androidx.room:room-compiler-processing
-// onto the KSP processor classpath. With Room itself no longer declared, nothing pins the
-// version, and the resolver falls back to 2.6.0 — a version whose sha256 isn't in
-// gradle/verification-metadata.xml. Pin it to the already-verified 2.6.1 instead.
-configurations.configureEach {
-    resolutionStrategy {
-        force "androidx.room:room-compiler-processing:2.6.1"
-    }
 }
 
 // Retrofit and OkHttp are still listed in libs.versions.toml for now;
