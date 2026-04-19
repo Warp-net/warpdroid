@@ -1,12 +1,5 @@
 # Development Guidelines
 
-## Documentation
-Before making any code changes, you must read the relevant official documentation on the website https://warpnet.site/docs.
-Requirements:
-- First find and read the relevant documentation pages, then act.
-- If the documentation is unclear or conflicts with the codebase rely on codebase.
-- If the documentation is unclear or conflicts with the codebase notify about this discrepancy.
-
 ## Code Changes
 - Make the smallest possible changes required to solve the task.
 - Avoid refactoring or unrelated edits.

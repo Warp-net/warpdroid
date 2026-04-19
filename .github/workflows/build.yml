@@ -51,6 +51,12 @@ jobs:
             -o "$cache_dir/gradle-9.0.0-bin.zip" \
             https://services.gradle.org/distributions/gradle-9.0.0-bin.zip
 
+      - name: Build debug
+        id: build
+        run: |
+          set -o pipefail
+          ./gradlew build -x test --stacktrace 2>&1 | tee assemble.log
+
       - name: Assemble debug APK
         id: assemble
         run: |
