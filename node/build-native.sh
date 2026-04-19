@@ -1,0 +1,25 @@
+#!/bin/bash
+# Build script for WarpNet Android native library
+
+set -e
+
+echo "Building WarpNet native library for Android..."
+if ! command -v go >/dev/null 2>&1; then
+    echo "Error: Go is not installed."
+    echo "Install Go from https://go.dev/dl/"
+    exit 1
+fi
+
+echo "Installing gomobile..."
+go install golang.org/x/mobile/cmd/gomobile@latest
+go install golang.org/x/mobile/cmd/gobind@latest
+
+echo "Initializing gomobile..."
+gomobile init
+
+echo "Building Android library..."
+GOFLAGS=-mod=mod gomobile bind -v -androidapi 21 -target=android -o warpnet.aar .
+mv warpnet.aar warpnet.aar
+mv warpnet-sources.jar warpnet-sources.jar
+
+echo "Build complete! Library created at android/libs/warpnet.aar"
