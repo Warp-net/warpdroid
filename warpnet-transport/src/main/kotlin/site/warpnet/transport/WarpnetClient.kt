@@ -55,6 +55,11 @@ class WarpnetClient(
     suspend fun initialise(config: WarpnetConfig) = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (_state.value != ConnectionState.Uninitialised) return@withLock
+            if (config.bootstrapAddrs.isEmpty()) {
+                val failure = WarpnetException.TransportFailure("bootstrap nodes required")
+                _state.value = ConnectionState.Failed(failure)
+                throw failure
+            }
             val err = binding.initialize(
                 privKeyHex = config.privKeyHex,
                 warpNetwork = WARP_NETWORK,
@@ -138,6 +143,15 @@ class WarpnetClient(
         mutex.withLock {
             if (_state.value == ConnectionState.Uninitialised) return@withLock
             binding.resume()
+            // Resume re-dials known peers in the background. Only promote back
+            // to Connected if the native host actually has a live connection;
+            // preserve Failed so the UI can still surface the prior error.
+            if (_state.value is ConnectionState.Failed) return@withLock
+            _state.value = if (binding.isConnected()) {
+                ConnectionState.Connected
+            } else {
+                ConnectionState.Disconnected
+            }
         }
     }
 

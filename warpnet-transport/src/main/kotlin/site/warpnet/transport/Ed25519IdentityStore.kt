@@ -25,9 +25,31 @@ class Ed25519IdentityStore(private val keyFile: File) {
     fun loadOrCreate(): ByteArray {
         existing()?.let { return it }
         val fresh = generate()
-        keyFile.parentFile?.mkdirs()
-        keyFile.writeBytes(fresh)
+        writeAtomically(fresh)
         return fresh
+    }
+
+    /**
+     * Write to a sibling temp file, fsync, then rename onto [keyFile]. This
+     * avoids leaving a half-written identity that would silently rotate the
+     * peer ID on next launch if the process is killed mid-write.
+     */
+    private fun writeAtomically(bytes: ByteArray) {
+        val parent = keyFile.parentFile
+        parent?.mkdirs()
+        val tmp = File.createTempFile(keyFile.name, ".tmp", parent)
+        try {
+            java.io.FileOutputStream(tmp).use { out ->
+                out.write(bytes)
+                out.fd.sync()
+            }
+            if (!tmp.renameTo(keyFile)) {
+                throw java.io.IOException("failed to rename ${tmp.absolutePath} -> ${keyFile.absolutePath}")
+            }
+        } catch (t: Throwable) {
+            tmp.delete()
+            throw t
+        }
     }
 
     /** Same as [loadOrCreate] but hex-encoded (lowercase), ready for the AAR. */
