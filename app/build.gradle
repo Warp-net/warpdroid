@@ -168,6 +168,18 @@ android {
     }
 }
 
+// No androidTest sources exist in this project. Keeping the variant enabled
+// causes AGP 8.13.2 + Gradle 9.2 to serialize the androidTest compile
+// classpath for :app:generateXxxAndroidTestLintModel, which both trips a
+// known config-cache serialization bug (aarOrAsar ArtifactCollection) and
+// forces download of dozens of .pom files not pinned in
+// gradle/verification-metadata.xml. Disable the variant at source.
+androidComponents {
+    beforeVariants(selector().all()) { variantBuilder ->
+        variantBuilder.enableAndroidTest = false
+    }
+}
+
 licensee {
     allow(SpdxId.Apache_20)
     allow(SpdxId.MIT)
