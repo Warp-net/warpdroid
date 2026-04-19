@@ -22,10 +22,16 @@ package site.warpnet.transport
  * [desktopPeerAddr] is the full multiaddr of the paired desktop node. The
  * transport calls `Connect()` with this value after init so every request
  * flows through one specific peer.
+ *
+ * [network] is the private-network label ("mainnet", "testnet", …) that
+ * scopes the libp2p DHT protocol prefix. Supplied by the desktop node via
+ * its QR handshake (`NodeInfo.network`); both ends must agree, there is no
+ * discovery fallback.
  */
 data class WarpnetConfig(
     val privKeyHex: String,
     val pskHex: String,
     val bootstrapAddrs: List<String>,
     val desktopPeerAddr: String,
+    val network: String,
 )

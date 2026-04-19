@@ -6,6 +6,7 @@
 package com.keylesspalace.tusky.di
 
 import android.content.Context
+import com.keylesspalace.tusky.components.pairing.PairedNodeStore
 import com.keylesspalace.tusky.entity.Attachment
 import com.keylesspalace.tusky.entity.Notification
 import com.keylesspalace.tusky.entity.Status
@@ -67,6 +68,13 @@ object WarpnetModule {
     fun providesWarpnetIdentityStore(
         @ApplicationContext context: Context,
     ): Ed25519IdentityStore = WarpnetTransport.createIdentityStore(context.filesDir)
+
+    @Provides
+    @Singleton
+    fun providesPairedNodeStore(
+        @ApplicationContext context: Context,
+        moshi: Moshi,
+    ): PairedNodeStore = PairedNodeStore(context, moshi)
 
     // Kept for call-site compatibility: the deleted NetworkModule used to
     // provide this for TuskyApplication and PlayerModule. Media playback

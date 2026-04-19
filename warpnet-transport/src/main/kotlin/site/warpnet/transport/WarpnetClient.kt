@@ -62,13 +62,14 @@ class WarpnetClient(
             }
             val err = binding.initialize(
                 privKeyHex = config.privKeyHex,
-                warpNetwork = WARP_NETWORK,
+                warpNetwork = config.network,
                 pskHex = config.pskHex,
                 bootstrapNodes = config.bootstrapAddrs.joinToString(","),
             )
             if (err.isNotEmpty()) {
-                _state.value = ConnectionState.Failed(WarpnetException.TransportFailure(err))
-                return@withLock
+                val failure = WarpnetException.TransportFailure(err)
+                _state.value = ConnectionState.Failed(failure)
+                throw failure
             }
             _state.value = ConnectionState.Disconnected
         }
@@ -88,6 +89,69 @@ class WarpnetClient(
                 throw failure
             }
             _state.value = ConnectionState.Connected
+        }
+    }
+
+    /**
+     * Walk [candidateAddrs] in order with a per-address 10s cap; the first
+     * address that succeeds becomes the live connection. Underlying Go dial
+     * keeps its own 30s ceiling, so this timeout only bounds how long the
+     * caller waits before moving on to the next address. On LAN the likely
+     * cause of a silent hang is the PC firewall, so surface that hint when
+     * every candidate fails.
+     */
+    suspend fun connectAny(candidateAddrs: List<String>): String = withContext(Dispatchers.IO) {
+        if (candidateAddrs.isEmpty()) {
+            throw WarpnetException.TransportFailure("no addresses to dial")
+        }
+        val errors = mutableListOf<String>()
+        for (addr in candidateAddrs) {
+            val err = runCatching {
+                kotlinx.coroutines.withTimeoutOrNull(DIAL_TIMEOUT_MILLIS) {
+                    mutex.withLock {
+                        if (_state.value == ConnectionState.Uninitialised) {
+                            throw WarpnetException.NotInitialised()
+                        }
+                        _state.value = ConnectionState.Connecting
+                        binding.connect(addr)
+                    }
+                } ?: "timed out after ${DIAL_TIMEOUT_MILLIS}ms"
+            }.getOrElse { it.message ?: it.toString() }
+            if (err.isEmpty()) {
+                _state.value = ConnectionState.Connected
+                return@withContext addr
+            }
+            errors += "$addr: $err"
+        }
+        val failure = WarpnetException.TransportFailure(
+            "could not dial any fat-node address (${errors.joinToString("; ")}). " +
+                "On LAN this is most often the PC firewall blocking the libp2p port."
+        )
+        _state.value = ConnectionState.Failed(failure)
+        throw failure
+    }
+
+    /**
+     * Open the pairing stream and submit [rawAuthNodeInfoJson] verbatim.
+     * Expected response is exactly [ACCEPTED_RESPONSE]; anything else is
+     * surfaced as a [WarpnetException.ProtocolError] so the caller can show
+     * the server message to the user without persisting identity.
+     */
+    suspend fun pair(rawAuthNodeInfoJson: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (_state.value !is ConnectionState.Connected) {
+                throw WarpnetException.NotConnected()
+            }
+            val raw = binding.stream(ProtocolIds.PRIVATE_POST_PAIR, rawAuthNodeInfoJson)
+            val trimmed = raw.trim()
+            if (trimmed == ACCEPTED_RESPONSE) return@withLock
+            val parsed = runCatching { errorAdapter.fromJson(trimmed) }.getOrNull()
+            if (parsed != null) {
+                throw WarpnetException.ProtocolError(parsed.code, parsed.message)
+            }
+            throw WarpnetException.TransportFailure(
+                if (trimmed.isEmpty()) "empty pairing response" else trimmed
+            )
         }
     }
 
@@ -183,8 +247,9 @@ class WarpnetClient(
     }
 
     private companion object {
-        // Hardcoded per product decision; the desktop side runs the same network.
-        const val WARP_NETWORK = "testnet"
+        const val DIAL_TIMEOUT_MILLIS = 10_000L
+        // Matches event.Accepted in warpnet/event/event.go; compared verbatim.
+        const val ACCEPTED_RESPONSE = "{\"code\":0,\"message\":\"Accepted\"}"
     }
 }
 

@@ -181,6 +181,15 @@ dependencies {
 
     implementation libs.bundles.androidx
 
+    // QR pairing: CameraX preview + on-device ML Kit barcode scanner so the
+    // app degrades to a manual flow rather than hard-failing on devices
+    // without Play Services.
+    implementation libs.bundles.camerax
+    implementation libs.mlkit.barcode.scanning
+    // Hardware-backed EncryptedSharedPreferences for the persisted
+    // Identity + pinned fat-node peer ID.
+    implementation libs.androidx.security.crypto
+
     implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.material
     implementation libs.androidx.compose.ui.tooling.preview
