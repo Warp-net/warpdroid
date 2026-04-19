@@ -154,10 +154,9 @@ android {
 
 // No androidTest sources exist in this project. Keeping the variant enabled
 // causes AGP 8.13.2 + Gradle 9.2 to serialize the androidTest compile
-// classpath for :app:generateXxxAndroidTestLintModel, which both trips a
-// known config-cache serialization bug (aarOrAsar ArtifactCollection) and
-// forces download of dozens of .pom files not pinned in
-// gradle/verification-metadata.xml. Disable the variant at source.
+// classpath for :app:generateXxxAndroidTestLintModel, tripping a known
+// config-cache serialization bug (aarOrAsar ArtifactCollection). Disable
+// the variant at source.
 androidComponents {
     beforeVariants(selector().all()) { variantBuilder ->
         variantBuilder.enableAndroidTest = false
@@ -233,16 +232,6 @@ dependencies {
     implementation libs.bundles.xmldiff
 
     implementation(libs.ktxml)
-}
-
-// Hilt's XProcessing framework transitively pulls androidx.room:room-compiler-processing
-// onto the KSP processor classpath. With Room itself no longer declared, nothing pins the
-// version, and the resolver falls back to 2.6.0 — a version whose sha256 isn't in
-// gradle/verification-metadata.xml. Pin it to the already-verified 2.6.1 instead.
-configurations.configureEach {
-    resolutionStrategy {
-        force "androidx.room:room-compiler-processing:2.6.1"
-    }
 }
 
 // Retrofit and OkHttp are still listed in libs.versions.toml for now;
