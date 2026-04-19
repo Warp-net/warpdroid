@@ -125,8 +125,6 @@ import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.migration.OptionalInject
 import javax.inject.Inject
 import kotlinx.coroutines.launch
-import site.warpnet.transport.ConnectionState
-import site.warpnet.transport.WarpnetClient
 
 @OptionalInject
 @AndroidEntryPoint
@@ -143,9 +141,6 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
 
     @Inject
     lateinit var draftsAlert: DraftsAlert
-
-    @Inject
-    lateinit var warpnetClient: WarpnetClient
 
     private val viewModel: MainViewModel by viewModels()
 
@@ -334,27 +329,6 @@ class MainActivity : BottomSheetActivity(), ActionButtonActivity, MenuProvider {
 
         // "Post failed" dialog should display in this activity
         draftsAlert.observeInContext(this@MainActivity, true)
-
-        lifecycleScope.launch {
-            warpnetClient.state.collect(::updateOfflineBanner)
-        }
-    }
-
-    private fun updateOfflineBanner(state: ConnectionState) {
-        val banner = binding.warpnetOfflineBanner
-        if (state is ConnectionState.Connected) {
-            banner.visibility = View.GONE
-            return
-        }
-        val messageRes = when (state) {
-            ConnectionState.Uninitialised -> R.string.warpnet_offline_banner_uninitialised
-            ConnectionState.Disconnected -> R.string.warpnet_offline_banner_disconnected
-            ConnectionState.Connecting -> R.string.warpnet_offline_banner_connecting
-            is ConnectionState.Failed -> R.string.warpnet_offline_banner_failed
-            ConnectionState.Connected -> return
-        }
-        banner.setText(messageRes)
-        banner.visibility = View.VISIBLE
     }
 
     override fun onNewIntent(intent: Intent) {
