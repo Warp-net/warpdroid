@@ -5,6 +5,7 @@
  */
 package com.keylesspalace.tusky.di
 
+import android.content.Context
 import com.keylesspalace.tusky.entity.Attachment
 import com.keylesspalace.tusky.entity.Notification
 import com.keylesspalace.tusky.entity.Status
@@ -17,10 +18,12 @@ import com.squareup.moshi.adapters.Rfc3339DateJsonAdapter
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.util.Date
 import javax.inject.Singleton
 import okhttp3.OkHttpClient
+import site.warpnet.transport.Ed25519IdentityStore
 import site.warpnet.transport.WarpnetClient
 import site.warpnet.transport.WarpnetTransport
 
@@ -58,6 +61,12 @@ object WarpnetModule {
     @Singleton
     fun providesWarpnetClient(moshi: Moshi): WarpnetClient =
         WarpnetTransport.createClient(moshi)
+
+    @Provides
+    @Singleton
+    fun providesWarpnetIdentityStore(
+        @ApplicationContext context: Context,
+    ): Ed25519IdentityStore = WarpnetTransport.createIdentityStore(context.filesDir)
 
     // Kept for call-site compatibility: the deleted NetworkModule used to
     // provide this for TuskyApplication and PlayerModule. Media playback

@@ -21,18 +21,20 @@ import java.time.format.DateTimeFormatter
  * Coroutine-friendly wrapper around the `node.Node` gomobile binding.
  *
  * Lifecycle:
- * 1. [initialise] — start the libp2p host with the shared PSK and bootstrap
- *    peers. Idempotent.
+ * 1. [initialise] — start the libp2p host with the Ed25519 identity, PSK and
+ *    bootstrap peers. Idempotent.
  * 2. [connect] — open a connection to the paired desktop multiaddr. Cheap;
  *    the binding keeps a single connection and [request] rides on it.
  * 3. [request] — open one stream per call (`open → write → closeWrite →
  *    read-to-EOF`), as documented in [ProtocolIds] and
  *    `docs/warpnet-protocol.md`.
- * 4. [shutdown] — close the host. After this the instance must be discarded;
+ * 4. [pause] / [resume] — drive libp2p's connection state across Android
+ *    foreground/background transitions without tearing the host down.
+ * 5. [shutdown] — close the host. After this the instance must be discarded;
  *    the gomobile side uses a package-level `clientInstance` singleton and
  *    will refuse re-initialisation until `Shutdown` clears it.
  *
- * The binding is globally singleton on the Go side (mobile.go:11), so this
+ * The binding is globally singleton on the Go side (mobile.go), so this
  * class also serialises access through a mutex. Do not construct more than
  * one [WarpnetClient] per process.
  */
@@ -53,7 +55,12 @@ class WarpnetClient(
     suspend fun initialise(config: WarpnetConfig) = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (_state.value != ConnectionState.Uninitialised) return@withLock
-            val err = binding.initialize(config.pskBase64, config.bootstrapAddrs.toTypedArray())
+            val err = binding.initialize(
+                privKeyHex = config.privKeyHex,
+                warpNetwork = WARP_NETWORK,
+                pskHex = config.pskHex,
+                bootstrapNodes = config.bootstrapAddrs.joinToString(","),
+            )
             if (err.isNotEmpty()) {
                 _state.value = ConnectionState.Failed(WarpnetException.TransportFailure(err))
                 return@withLock
@@ -107,6 +114,33 @@ class WarpnetClient(
         raw
     }
 
+    /**
+     * Drop live connections when the app moves to the background. The host
+     * remains initialised; [resume] re-dials known peers. Mirrors
+     * `node.Node.pause()`.
+     */
+    suspend fun pause() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (_state.value == ConnectionState.Uninitialised) return@withLock
+            binding.pause()
+            // Don't overwrite a Failed state; only demote from Connected/Connecting.
+            if (_state.value is ConnectionState.Connected || _state.value is ConnectionState.Connecting) {
+                _state.value = ConnectionState.Disconnected
+            }
+        }
+    }
+
+    /**
+     * Re-establish connections to previously known peers when the app returns
+     * to the foreground. Mirrors `node.Node.resume()`.
+     */
+    suspend fun resume() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (_state.value == ConnectionState.Uninitialised) return@withLock
+            binding.resume()
+        }
+    }
+
     /** Close the native host. After this the client must be discarded. */
     suspend fun shutdown() = withContext(Dispatchers.IO) {
         mutex.withLock {
@@ -128,6 +162,11 @@ class WarpnetClient(
         if (err.code == 0 && err.message.isEmpty()) return
         throw WarpnetException.ProtocolError(err.code, err.message)
     }
+
+    private companion object {
+        // Hardcoded per product decision; the desktop side runs the same network.
+        const val WARP_NETWORK = "testnet"
+    }
 }
 
 /**
@@ -135,12 +174,14 @@ class WarpnetClient(
  * real implementation forwards straight to `node.Node`.
  */
 interface WarpnetBinding {
-    fun initialize(pskBase64: String, bootstrapAddrs: Array<String>): String
+    fun initialize(privKeyHex: String, warpNetwork: String, pskHex: String, bootstrapNodes: String): String
     fun connect(addrInfo: String): String
     fun stream(protocolId: String, data: String): String
     fun peerId(): String
     fun isConnected(): Boolean
     fun disconnect(): String
+    fun pause()
+    fun resume()
     fun shutdown(): String
 }
 
@@ -151,16 +192,10 @@ interface WarpnetBinding {
  *
  * Method names are camelCase because gomobile lowercases the first letter of
  * Go-exported functions when generating Java bindings.
- *
- * `initialize` is a stub: gomobile bind cannot marshal `[]string` so it
- * silently drops any Go function that takes one — see the generated
- * `node/Node.java` "skipped function Initialize" comment. The companion
- * android-binding repo needs a `func Initialize(pskBase64, bootstrapCsv string)`
- * signature and a rebuilt AAR before this wrapper can forward to it.
  */
 object DefaultBinding : WarpnetBinding {
-    override fun initialize(pskBase64: String, bootstrapAddrs: Array<String>): String =
-        "warpnet AAR does not export Initialize; rebuild android-binding with a gomobile-compatible signature"
+    override fun initialize(privKeyHex: String, warpNetwork: String, pskHex: String, bootstrapNodes: String): String =
+        node.Node.initialize(privKeyHex, warpNetwork, pskHex, bootstrapNodes)
 
     override fun connect(addrInfo: String): String =
         node.Node.connect(addrInfo)
@@ -173,6 +208,10 @@ object DefaultBinding : WarpnetBinding {
     override fun isConnected(): Boolean = node.Node.isConnected() == "true"
 
     override fun disconnect(): String = node.Node.disconnect()
+
+    override fun pause() = node.Node.pause()
+
+    override fun resume() = node.Node.resume()
 
     override fun shutdown(): String = node.Node.shutdown()
 }

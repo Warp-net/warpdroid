@@ -1,229 +1,114 @@
 package node
 
 import (
-	"encoding/base64"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
+	"strings"
 	"testing"
 )
 
-func TestInitialize(t *testing.T) {
-	// Clean up before test
-	clientInstance = nil
-
-	result := Initialize("", []string{})
-	if result != "" {
-		t.Fatalf("Initialize failed: %s", result)
+func newKeyHex(t *testing.T) string {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519.GenerateKey: %v", err)
 	}
-
-	if clientInstance == nil {
-		t.Fatal("Client instance is nil after initialization")
-	}
-
-	// Cleanup
-	Shutdown()
+	return hex.EncodeToString(priv)
 }
 
-func TestInitializeWithPSK(t *testing.T) {
-	// Clean up before test
-	clientInstance = nil
-
-	// Create a valid 32-byte PSK
+func newPSKHex() string {
 	psk := make([]byte, 32)
 	for i := range psk {
 		psk[i] = byte(i)
 	}
-	pskBase64 := base64.StdEncoding.EncodeToString(psk)
-
-	result := Initialize(pskBase64, []string{})
-	if result != "" {
-		t.Fatalf("Initialize with PSK failed: %s", result)
-	}
-
-	if clientInstance == nil {
-		t.Fatal("Client instance is nil after initialization with PSK")
-	}
-
-	// Cleanup
-	Shutdown()
+	return hex.EncodeToString(psk)
 }
 
-func TestInitializeWithInvalidPSK(t *testing.T) {
-	// Clean up before test
+func TestInitializeRejectsInvalidPrivKey(t *testing.T) {
 	clientInstance = nil
 
-	// Invalid PSK (not 32 bytes)
-	psk := make([]byte, 16)
-	pskBase64 := base64.StdEncoding.EncodeToString(psk)
-
-	result := Initialize(pskBase64, []string{})
-	if result == "" {
-		t.Fatal("Initialize should fail with invalid PSK length")
-	}
-
-	if !contains(result, "PSK must be exactly 32 bytes") {
-		t.Fatalf("Expected PSK length error, got: %s", result)
+	result := Initialize("not-hex!", "testnet", newPSKHex(), "addr")
+	if result == "" || !strings.Contains(result, "invalid PK") {
+		t.Fatalf("expected invalid PK error, got: %q", result)
 	}
 }
 
-func TestInitializeWithInvalidBase64(t *testing.T) {
-	// Clean up before test
+func TestInitializeRejectsInvalidPSK(t *testing.T) {
 	clientInstance = nil
 
-	result := Initialize("not-valid-base64!@#$", []string{})
-	if result == "" {
-		t.Fatal("Initialize should fail with invalid base64")
-	}
-
-	if !contains(result, "invalid PSK") {
-		t.Fatalf("Expected invalid PSK error, got: %s", result)
+	result := Initialize(newKeyHex(t), "testnet", "not-hex!", "addr")
+	if result == "" || !strings.Contains(result, "invalid PSK") {
+		t.Fatalf("expected invalid PSK error, got: %q", result)
 	}
 }
 
-func TestGetClientPeerID(t *testing.T) {
-	// Clean up before test
-	clientInstance = nil
+func TestInitializeRejectsWhenAlreadyInitialized(t *testing.T) {
+	// Simulate an already-initialized client so we hit the guard without
+	// needing a live network.
+	clientInstance = &clientNode{}
+	defer func() { clientInstance = nil }()
 
-	// Should return empty string when not initialized
-	peerID := PeerID()
-	if peerID != "" {
-		t.Fatalf("Expected empty peer ID before init, got: %s", peerID)
+	result := Initialize(newKeyHex(t), "testnet", newPSKHex(), "addr")
+	if result != "already initialized" {
+		t.Fatalf("expected already-initialized error, got: %q", result)
 	}
-
-	// Initialize client
-	Initialize("", []string{})
-
-	// Should return peer ID after initialization
-	peerID = PeerID()
-	if peerID == "" {
-		t.Fatal("Peer ID is empty after initialization")
-	}
-
-	// Cleanup
-	Shutdown()
 }
 
-func TestCheckConnection(t *testing.T) {
-	// Clean up before test
+func TestConnectFailsWhenNotInitialized(t *testing.T) {
 	clientInstance = nil
 
-	// Should return "false" when not initialized
-	result := IsConnected()
-	if result != "false" {
-		t.Fatalf("Expected 'false' before init, got: %s", result)
-	}
-
-	// Initialize client
-	Initialize("", []string{})
-
-	// Should return "false" when initialized but not connected
-	result = IsConnected()
-	if result != "false" {
-		t.Fatalf("Expected 'false' when not connected, got: %s", result)
-	}
-
-	// Cleanup
-	Shutdown()
-}
-
-func TestConnectToNodeNotInitialized(t *testing.T) {
-	// Clean up before test
-	clientInstance = nil
-
-	addrInfo := "/ip4/207.154.221.44/tcp/4011/p2p/12D3KooWMKZFrp1BDKg9amtkv5zWnLhuUXN32nhqMvbtMdV2hz7j"
-	result := Connect(addrInfo)
-	if result == "" {
-		t.Fatal("ConnectToNode should fail when not initialized")
-	}
-
+	result := Connect("/ip4/127.0.0.1/tcp/4011/p2p/12D3KooWMKZFrp1BDKg9amtkv5zWnLhuUXN32nhqMvbtMdV2hz7j")
 	if result != "client not initialized" {
-		t.Fatalf("Expected 'client not initialized', got: %s", result)
+		t.Fatalf("expected client-not-initialized error, got: %q", result)
 	}
 }
 
-func TestSendRequestNotInitialized(t *testing.T) {
-	// Clean up before test
+func TestStreamFailsWhenNotInitialized(t *testing.T) {
 	clientInstance = nil
 
 	result := Stream("/test/protocol", "{}")
-
 	if result != "client not initialized" {
-		t.Fatalf("Expected 'client not initialized' error, got: %v", result)
+		t.Fatalf("expected client-not-initialized error, got: %q", result)
 	}
 }
 
-func TestDisconnectFromNode(t *testing.T) {
-	// Clean up before test
+func TestPeerIDEmptyWhenNotInitialized(t *testing.T) {
 	clientInstance = nil
 
-	// Should not error when not initialized
-	result := Disconnect()
-	if result != "" {
-		t.Fatalf("DisconnectFromNode should not error when not initialized, got: %s", result)
+	if got := PeerID(); got != "" {
+		t.Fatalf("expected empty peer id, got: %q", got)
 	}
-
-	// Initialize and disconnect
-	Initialize("", []string{})
-	result = Disconnect()
-	if result != "" {
-		t.Fatalf("DisconnectFromNode failed: %s", result)
-	}
-
-	// Cleanup
-	Shutdown()
 }
 
-func TestShutdown(t *testing.T) {
-	// Clean up before test
+func TestIsConnectedFalseWhenNotInitialized(t *testing.T) {
 	clientInstance = nil
 
-	// Should not error when not initialized
-	result := Shutdown()
-	if result != "" {
-		t.Fatalf("Shutdown should not error when not initialized, got: %s", result)
-	}
-
-	// Initialize and shutdown
-	Initialize("", []string{})
-	result = Shutdown()
-	if result != "" {
-		t.Fatalf("Shutdown failed: %s", result)
-	}
-
-	// Verify client instance is nil after shutdown
-	if clientInstance != nil {
-		t.Fatal("Client instance should be nil after shutdown")
+	if got := IsConnected(); got != "false" {
+		t.Fatalf("expected \"false\", got: %q", got)
 	}
 }
 
-func TestMultipleShutdowns(t *testing.T) {
-	// Clean up before test
+func TestDisconnectNoopWhenNotInitialized(t *testing.T) {
 	clientInstance = nil
 
-	Initialize("", []string{})
-
-	result := Shutdown()
-	if result != "" {
-		t.Fatalf("First shutdown failed: %s", result)
-	}
-
-	// Second shutdown should not error
-	result = Shutdown()
-	if result != "" {
-		t.Fatalf("Second shutdown failed: %s", result)
+	if got := Disconnect(); got != "" {
+		t.Fatalf("expected empty disconnect result, got: %q", got)
 	}
 }
 
-// Helper function
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-			findSubstring(s, substr)))
+func TestShutdownNoopWhenNotInitialized(t *testing.T) {
+	clientInstance = nil
+
+	if got := Shutdown(); got != "" {
+		t.Fatalf("expected empty shutdown result, got: %q", got)
+	}
 }
 
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+func TestPauseResumeNoopWhenNotInitialized(t *testing.T) {
+	clientInstance = nil
+
+	// Must not panic when there's nothing to pause/resume.
+	Pause()
+	Resume()
 }
