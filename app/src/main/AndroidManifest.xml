@@ -9,8 +9,8 @@
     <uses-permission android:name="android.permission.VIBRATE" /> <!-- For notifications -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Camera is used only by the QR pairing scanner. Hardware is not
-         required — the scanner activity falls back to a manual JSON paste
-         when the user denies the permission or no camera is present. -->
+         required, so the app remains installable on devices without a
+         camera. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 

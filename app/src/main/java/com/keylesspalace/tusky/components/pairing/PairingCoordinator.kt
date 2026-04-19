@@ -27,7 +27,7 @@ sealed class PairingOutcome {
     data class Success(val paired: PairedNode, val dialedAddr: String) : PairingOutcome()
     data class TransportError(val message: String) : PairingOutcome()
     data class Rejected(val code: Int, val message: String) : PairingOutcome()
-    data class PeerIdMismatch(val expected: String, val actual: String) : PairingOutcome()
+    data class PeerIdMismatch(val expected: String, val errorMessage: String) : PairingOutcome()
 }
 
 @Singleton

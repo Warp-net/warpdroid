@@ -25,7 +25,7 @@ import com.keylesspalace.tusky.MainActivity
 import com.keylesspalace.tusky.R
 import com.squareup.moshi.Moshi
 import dagger.hilt.android.AndroidEntryPoint
-import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import javax.inject.Inject
 import kotlinx.coroutines.launch
@@ -53,7 +53,7 @@ class PairingActivity : AppCompatActivity() {
     private lateinit var scanPrompt: View
 
     private val validator by lazy { AuthNodeInfoValidator(moshi) }
-    private val cameraExecutor: Executor = Executors.newSingleThreadExecutor()
+    private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var analyzer: QrCodeAnalyzer? = null
     private var cameraProvider: ProcessCameraProvider? = null
 
@@ -92,6 +92,7 @@ class PairingActivity : AppCompatActivity() {
         super.onDestroy()
         analyzer?.close()
         cameraProvider?.unbindAll()
+        cameraExecutor.shutdown()
     }
 
     private fun startCamera() {
