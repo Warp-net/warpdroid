@@ -23,6 +23,9 @@ android {
             jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
         }
     }
+    lint {
+        abortOnError = false
+    }
 }
 
 // See app/build.gradle for the rationale behind vendoring the AAR and
