@@ -170,6 +170,16 @@ licensee {
     allowUrl('https://github.com/AOMediaCodec/libavif/blob/master/LICENSE')
 }
 
+// ML Kit's barcode scanner pulls the unified com.google.crypto.tink:tink
+// JVM artifact (1.17.0), which fully overlaps with the legacy
+// com.google.crypto.tink:tink-android (1.8.0) that androidx.security-crypto
+// 1.1.0 requires. Only tink-android ships the Android-Keystore integration
+// (AndroidKeysetManager) used by EncryptedSharedPreferences, so keep it and
+// globally drop the unified JVM copy to avoid "Duplicate class" R8 errors.
+configurations.configureEach {
+    exclude group: "com.google.crypto.tink", module: "tink"
+}
+
 // library versions are in PROJECT_ROOT/gradle/libs.versions.toml
 // The warpnet.aar + gomobile rebuild task live in :warpnet-transport, which
 // the app module depends on transitively.
@@ -184,15 +194,7 @@ dependencies {
     // app degrades to a manual flow rather than hard-failing on devices
     // without Play Services.
     implementation libs.bundles.camerax
-    // ML Kit 17.3.0 pulls the unified com.google.crypto.tink:tink:1.17.0 JVM
-    // artifact, whose classes collide with the legacy tink-android:1.8.0
-    // that security-crypto 1.1.0 requires. Only tink-android ships the
-    // Android-Keystore integration (AndroidKeysetManager) used by
-    // EncryptedSharedPreferences, so keep tink-android and drop the
-    // duplicate JVM copy from the ML Kit classpath.
-    implementation(libs.mlkit.barcode.scanning) {
-        exclude group: "com.google.crypto.tink", module: "tink"
-    }
+    implementation libs.mlkit.barcode.scanning
     // Hardware-backed EncryptedSharedPreferences for the persisted
     // Identity + pinned fat-node peer ID.
     implementation libs.androidx.security.crypto
