@@ -99,7 +99,9 @@ dependencies {
 // AGP forbids direct local .aar file dependencies when building an AAR
 // publication. The :app module consumes this library via a project dependency,
 // which uses per-variant intermediate artifacts and does not require the
-// bundled AAR. Disable the bundling tasks so `./gradlew build` succeeds.
-tasks.matching { it.name.startsWith("bundle") && it.name.endsWith("Aar") }.configureEach {
+// publication AAR. Disable only the publication tasks (bundleDebugAar /
+// bundleReleaseAar); the bundleXxxLocalLintAar tasks must stay enabled because
+// the lint pipeline transforms their out.aar into android-lint-exploded-aar.
+tasks.matching { it.name == "bundleDebugAar" || it.name == "bundleReleaseAar" }.configureEach {
     enabled = false
 }
