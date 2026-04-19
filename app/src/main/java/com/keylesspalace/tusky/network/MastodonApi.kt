@@ -63,6 +63,7 @@ import com.keylesspalace.tusky.entity.Translation
 import com.keylesspalace.tusky.entity.TrendingTag
 import com.keylesspalace.tusky.warpnet.WarpnetMapper
 import com.keylesspalace.tusky.warpnet.WarpnetRepository
+import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
 import okhttp3.Headers
@@ -473,13 +474,31 @@ class MastodonApi @Inject constructor(
     // accounts
     // ---------------------------------------------------------------
 
+    // Warpdroid has no login flow — the stub account stands in for what
+    // OAuth login would normally populate. Resolve locally from the
+    // AccountEntity instead of calling Warpnet (which may be offline /
+    // uninitialised at app start).
     suspend fun accountVerifyCredentials(
         domain: String? = null,
         auth: String? = null,
     ): NetworkResult<Account> {
-        val userId = accountManager.activeAccount?.accountId.orEmpty()
-        if (userId.isEmpty()) return stubFailure("accountVerifyCredentials")
-        return result { warpnet.getAccount(userId) }
+        val active = accountManager.activeAccount
+            ?: return stubFailure("accountVerifyCredentials")
+        return NetworkResult.success(
+            Account(
+                id = active.accountId,
+                localUsername = active.username,
+                username = active.username,
+                displayName = active.displayName,
+                createdAt = Date(0),
+                note = "",
+                url = "${WarpnetMapper.FAKE_BASE_URL}/users/${active.accountId}",
+                avatar = active.profilePictureUrl,
+                header = active.profileHeaderUrl,
+                locked = active.locked,
+                emojis = active.emojis,
+            )
+        )
     }
 
     suspend fun accountUpdateSource(
