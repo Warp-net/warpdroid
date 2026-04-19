@@ -10,3 +10,4 @@ build
 /app/green/release
 .kotlin
 .idea
+node/vendor

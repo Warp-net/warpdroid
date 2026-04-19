@@ -1,7 +1,8 @@
 package node
 
 import (
-	"encoding/base64"
+	"context"
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -11,30 +12,32 @@ import (
 
 var clientInstance *clientNode
 
-// Method creates a new WarpNet client with optional PSK
-// pskBase64: base64-encoded PSK (32 bytes), empty string for no PSK
+// Initialize method creates a new WarpNet client with optional PSK
 // Returns error message or empty string on success
-func Initialize(pskBase64 string, bootstrapNodes string) string {
+func Initialize(privKeyHex, warpNetwork, pskHex, bootstrapNodes string) string {
 	var (
-		psk []byte
-		err error
+		psk, privKey []byte
+		err          error
 	)
 
 	if clientInstance != nil {
 		return fmt.Sprintf("already initialized")
 	}
 
-	if pskBase64 != "" {
-		psk, err = base64.StdEncoding.DecodeString(pskBase64)
+	if pskHex != "" {
+		psk, err = hex.DecodeString(pskHex)
 		if err != nil {
 			return fmt.Sprintf("invalid PSK: %v", err)
 		}
-		if len(psk) != 32 {
-			return "PSK must be exactly 32 bytes"
+	}
+	if privKeyHex != "" {
+		privKey, err = hex.DecodeString(privKeyHex)
+		if err != nil {
+			return fmt.Sprintf("invalid PK: %v", err)
 		}
 	}
 
-	client, err := newClient(psk, strings.Split(bootstrapNodes, ","))
+	client, err := newClient(privKey, psk, warpNetwork, strings.Split(bootstrapNodes, ","))
 	if err != nil {
 		return fmt.Sprintf("failed to create client: %v", err)
 	}
@@ -97,6 +100,27 @@ func Disconnect() string {
 	}
 
 	return ""
+}
+
+// Pause background transition
+func Pause() {
+	if clientInstance == nil || clientInstance.host == nil {
+		return
+	}
+	for _, c := range clientInstance.host.Network().Conns() {
+		_ = c.Close()
+	}
+}
+
+// Resume foreground transition
+func Resume() {
+	if clientInstance == nil || clientInstance.host == nil {
+		return
+	}
+	for _, id := range clientInstance.host.Peerstore().PeersWithAddrs() {
+		info := clientInstance.host.Peerstore().PeerInfo(id)
+		_ = clientInstance.host.Connect(context.Background(), info)
+	}
 }
 
 func Shutdown() string {
