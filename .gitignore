@@ -11,3 +11,4 @@ build
 .kotlin
 .idea
 node/vendor
+warpnet-transport/libs/warpnet

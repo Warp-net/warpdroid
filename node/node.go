@@ -80,15 +80,16 @@ func newClient(
 	rm, _ := rcmgr.NewResourceManager(limiter)
 	// Build libp2p options matching thin client requirements
 	opts := []libp2p.Option{
+	    libp2p.DisableMetrics(),                  // Lightweight
+        libp2p.DisableRelay(),
+	    libp2p.DisableIdentifyAddressDiscovery(),
+	    libp2p.NoTransports,
+	    libp2p.NoListenAddrs,                     // Client-only mode - no listening
 		libp2p.PrivateNetwork(psk),
 		libp2p.Identity(privateKey),              // Client identity
-		libp2p.NoListenAddrs,                     // Client-only mode - no listening
-		libp2p.DisableMetrics(),                  // Lightweight
-		libp2p.DisableRelay(),                    // No relay listening
 		libp2p.Security(noise.ID, noise.New),     // Noise protocol for encryption
 		libp2p.Transport(tcp.NewTCPTransport),    // TCP transport
 		libp2p.UserAgent("warpdroid"),            // Custom user agent
-		libp2p.DisableIdentifyAddressDiscovery(), // Disable address discovery (client-only)
 		libp2p.ForceReachabilityPrivate(),
 		libp2p.Muxer(yamux.ID, yamux.DefaultTransport),
 		libp2p.ConnectionManager(connManager),

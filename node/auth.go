@@ -34,6 +34,7 @@ type NodeInfo struct {
 	Reachability   int        `json:"reachability"`
 	Protocols      []string   `json:"protocols"`
 	Hash           string     `json:"hash"`
+    Network        string     `json:"network"`
 }
 
 type AddrInfo struct {

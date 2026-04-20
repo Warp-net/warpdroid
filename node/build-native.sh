@@ -18,8 +18,10 @@ echo "Initializing gomobile..."
 gomobile init
 
 echo "Building Android library..."
-GOFLAGS=-mod=mod gomobile bind -ldflags="-checklinkname=0" -v -androidapi 21 -target=android -o warpnet.aar .
+GOFLAGS=-mod=mod gomobile bind -ldflags="-checklinkname=0 -s -w" -trimpath -v -androidapi 21 -target=android/arm64 -o warpnet.aar .
+rm -rf ../warpnet-transport/libs/warpnet
+rm -f ../warpnet-transport/libs/warpnet.aar
 mv warpnet.aar ../warpnet-transport/libs/warpnet.aar
 mv warpnet-sources.jar ../warpnet-transport/libs/warpnet-sources.jar
 
-echo "Build complete! Library created at android/libs/warpnet.aar"
+echo "Build complete! Library created at warpnet-transport/libs/warpnet.aar"

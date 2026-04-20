@@ -1,5 +1,9 @@
 # Development Guidelines
 
+## Restrictions
+- Never build codebase by yourself. Delegate it to Github Action.
+
+
 ## Code Changes
 - Make the smallest possible changes required to solve the task.
 - Avoid refactoring or unrelated edits.
