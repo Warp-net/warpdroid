@@ -5,6 +5,7 @@
  */
 package site.warpnet.transport
 
+import com.squareup.moshi.JsonWriter
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.adapter
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okio.Buffer
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
@@ -48,7 +50,6 @@ class WarpnetClient(
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Uninitialised)
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
-    private val envelopeAdapter = moshi.adapter<WarpnetEnvelope>()
     private val errorAdapter = moshi.adapter<WarpnetResponseError>()
 
     /** Start the libp2p host. No-op if already initialised. */
@@ -157,7 +158,7 @@ class WarpnetClient(
                 timestamp = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
             )
 
-            val requestJson = envelopeAdapter.toJson(envelope)
+            val requestJson = buildEnvelopeJson(envelope)
             val raw = binding.stream(ProtocolIds.PRIVATE_POST_PAIR, requestJson)
             val trimmed = raw.trim()
             if (trimmed == ACCEPTED_RESPONSE) return@withLock
@@ -192,7 +193,7 @@ class WarpnetClient(
                 timestamp = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
             ).copy(signature = signer.sign(bodyJson))
 
-            val requestJson = envelopeAdapter.toJson(envelope)
+            val requestJson = buildEnvelopeJson(envelope)
             val raw = binding.stream(protocolId, requestJson)
 
             // The binding returns the error message directly (no JSON wrapping)
@@ -246,6 +247,37 @@ class WarpnetClient(
             binding.shutdown()
             _state.value = ConnectionState.Uninitialised
         }
+    }
+
+    /**
+     * Marshal [envelope] to JSON with `body` emitted as raw JSON instead of a
+     * quoted string. The server's `event.Message.Body` is `json.RawMessage`,
+     * so the handler unmarshals those bytes directly as the inner event
+     * type. Moshi's default `String` adapter would JSON-escape the body,
+     * yielding `"body":"{\"foo\":1}"` and breaking server-side unmarshal:
+     *
+     *     pair: unmarshaling from stream: "{\"user_id\":...}"
+     *     readObjectStart: expect { or n, but found "
+     *
+     * `JsonWriter.valueSink()` writes the next value's bytes verbatim,
+     * preserving byte-for-byte parity with what was signed (so the
+     * signature still verifies on the server side).
+     */
+    private fun buildEnvelopeJson(envelope: WarpnetEnvelope): String {
+        val buf = Buffer()
+        JsonWriter.of(buf).use { w ->
+            w.beginObject()
+            w.name("body")
+            w.valueSink().use { it.writeUtf8(envelope.body) }
+            w.name("message_id").value(envelope.message_id)
+            w.name("node_id").value(envelope.node_id)
+            w.name("path").value(envelope.path)
+            w.name("timestamp").value(envelope.timestamp)
+            w.name("version").value(envelope.version)
+            w.name("signature").value(envelope.signature)
+            w.endObject()
+        }
+        return buf.readUtf8()
     }
 
     private fun throwIfErrorResponse(raw: String) {
