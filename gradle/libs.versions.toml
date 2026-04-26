@@ -39,7 +39,6 @@ image-cropper = "4.7.0"
 kotlin = "2.2.10"
 ktxml = "1.0.0"
 material = "1.13.0"
-brotli-dec = "0.1.2"
 material-drawer = "9.0.2"
 mlkit-barcode-scanning = "17.3.0"
 mockito-inline = "5.2.0"
@@ -138,7 +137,6 @@ material-drawer-core = { module = "com.mikepenz:materialdrawer", version.ref = "
 material-drawer-iconics = { module = "com.mikepenz:materialdrawer-iconics", version.ref = "material-drawer" }
 mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockito-kotlin" }
 mockito-inline = { module = "org.mockito:mockito-inline", version.ref = "mockito-inline" }
-brotli-dec = { module = "org.brotli:dec", version.ref = "brotli-dec" }
 mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkit-barcode-scanning" }
 mockwebserver = { module = "com.squareup.okhttp3:mockwebserver3", version.ref = "okhttp" }
 moshi-core = { module = "com.squareup.moshi:moshi", version.ref = "moshi" }

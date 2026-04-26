@@ -6,18 +6,17 @@
 package com.keylesspalace.tusky.components.pairing
 
 import java.io.ByteArrayInputStream
-import org.brotli.dec.BrotliInputStream
+import java.util.zip.GZIPInputStream
 
 /**
- * Decodes the pairing payload encoded by `warpnet/security/qrpayload.go`:
- * Brotli-compressed JSON, Base45-encoded for QR alphanumeric mode.
+ * Decodes the pairing payload encoded by the desktop frontend: gzip-
+ * compressed JSON (RFC 1952), Base45-encoded for QR alphanumeric mode.
  *
- * The fat node serialises [site.warpnet.transport.dto.AuthNodeInfo] to JSON,
- * compresses it with Brotli at quality 11 and encodes the result with
- * Base45 (RFC 9285). The Base45 alphabet is a strict subset of QR
- * alphanumeric mode, which packs 5.5 bits per character versus the
- * 8 bits-per-character of byte mode and lets the full envelope fit
- * without trimming any dial fields.
+ * The frontend gzip-compresses the AuthNodeInfo JSON at level 9 and
+ * encodes the result with Base45 (RFC 9285). The Base45 alphabet is a
+ * strict subset of QR alphanumeric mode, which packs 5.5 bits per
+ * character versus the 8 bits-per-character of byte mode and lets the
+ * full envelope fit without trimming any dial fields.
  */
 object QrPayloadCodec {
 
@@ -33,7 +32,7 @@ object QrPayloadCodec {
         // Plain JSON starts with '{'; let the caller handle it directly.
         if (trimmed.startsWith("{")) return trimmed
         val compressed = Base45.decode(trimmed)
-        BrotliInputStream(ByteArrayInputStream(compressed)).use { input ->
+        GZIPInputStream(ByteArrayInputStream(compressed)).use { input ->
             return String(input.readBytes(), Charsets.UTF_8)
         }
     }
