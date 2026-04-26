@@ -7,7 +7,6 @@ package com.keylesspalace.tusky.components.pairing
 
 import com.squareup.moshi.JsonClass
 import site.warpnet.transport.dto.AuthNodeInfo
-import site.warpnet.transport.dto.Identity
 
 /**
  * Persisted shape for a successful pairing. Keeps the full [Identity] so the

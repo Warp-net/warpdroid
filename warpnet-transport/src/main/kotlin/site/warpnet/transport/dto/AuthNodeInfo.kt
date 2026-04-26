@@ -21,39 +21,13 @@ import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
 data class AuthNodeInfo(
-    val identity: Identity,
-    @Json(name = "node_info") val nodeInfo: NodeInfo,
-)
-
-@JsonClass(generateAdapter = true)
-data class Identity(
-    val owner: Owner,
-    val token: String,
-    val psk: String,
-)
-
-@JsonClass(generateAdapter = true)
-data class Owner(
-    @Json(name = "created_at") val createdAt: String = "",
+    @Json(name = "token") val token: String,
+    @Json(name = "psk") val psk: String,
+    @Json(name = "network") val network: String = "",
+    @Json(name = "addresses") val addresses: List<String> = emptyList(),
     @Json(name = "node_id") val nodeId: String,
     @Json(name = "user_id") val userId: String,
-    @Json(name = "id") val redundantUserId: String = "",
-    val username: String,
-)
-
-@JsonClass(generateAdapter = true)
-data class NodeInfo(
-    @Json(name = "owner_id") val ownerId: String = "",
-    @Json(name = "node_id") val id: String,
-    val version: String? = null,
-    val addresses: List<String> = emptyList(),
-    @Json(name = "start_time") val startTime: String = "",
-    @Json(name = "relay_state") val relayState: String = "",
     @Json(name = "bootstrap_peers") val bootstrapPeers: List<AddrInfo> = emptyList(),
-    val reachability: Int = 0,
-    val protocols: List<String> = emptyList(),
-    val hash: String = "",
-    val network: String = "",
 )
 
 @JsonClass(generateAdapter = true)

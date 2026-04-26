@@ -55,14 +55,12 @@ class AuthNodeInfoValidator(moshi: Moshi) {
         } ?: return ValidationResult.Invalid("empty pairing JSON")
 
         val missing = mutableListOf<String>()
-        if (parsed.identity.token.isBlank()) missing += "identity.token"
-        if (parsed.identity.psk.isBlank()) missing += "identity.psk"
-        if (parsed.identity.owner.nodeId.isBlank()) missing += "identity.owner.node_id"
-        if (parsed.identity.owner.userId.isBlank()) missing += "identity.owner.user_id"
-        if (parsed.identity.owner.username.isBlank()) missing += "identity.owner.username"
-        if (parsed.nodeInfo.id.isBlank()) missing += "node_info.node_id"
-        if (parsed.nodeInfo.addresses.isEmpty()) missing += "node_info.addresses"
-        if (parsed.nodeInfo.network.isBlank()) missing += "node_info.network"
+        if (parsed.token.isBlank()) missing += "identity.token"
+        if (parsed.psk.isBlank()) missing += "identity.psk"
+        if (parsed.nodeId.isBlank()) missing += "identity.owner.node_id"
+        if (parsed.userId.isBlank()) missing += "identity.owner.user_id"
+        if (parsed.addresses.isEmpty()) missing += "node_info.addresses"
+        if (parsed.network.isBlank()) missing += "node_info.network"
         if (missing.isNotEmpty()) {
             return ValidationResult.Invalid("missing fields: ${missing.joinToString()}")
         }
@@ -71,7 +69,7 @@ class AuthNodeInfoValidator(moshi: Moshi) {
         // least one segment. go-libp2p's parser does the final check on the
         // desktop side; this is the minimum-viable prefilter so we don't
         // even bother dialling obvious garbage.
-        val hasDialable = parsed.nodeInfo.addresses.any {
+        val hasDialable = parsed.addresses.any {
             it.startsWith("/") && it.trim('/').isNotEmpty()
         }
         if (!hasDialable) {
