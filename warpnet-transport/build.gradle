@@ -69,6 +69,11 @@ dependencies {
 
     implementation libs.kotlinx.coroutines.android
     implementation libs.bundles.moshi
+    // Tink supplies the Ed25519 keypair generator used by
+    // Ed25519IdentityStore. The library is already pulled in transitively by
+    // androidx.security-crypto on the :app classpath; declaring it here makes
+    // it visible at compile time for this module.
+    implementation libs.tink.android
     ksp libs.moshi.kotlin.codegen
 }
 

@@ -5,8 +5,8 @@
  */
 package site.warpnet.transport
 
+import com.google.crypto.tink.subtle.Ed25519Sign
 import java.io.File
-import java.security.KeyPairGenerator
 
 /**
  * Loads or generates the 64-byte libp2p Ed25519 private key that the AAR's
@@ -63,19 +63,18 @@ class Ed25519IdentityStore(private val keyFile: File) {
     }
 
     private fun generate(): ByteArray {
-        // Conscrypt is installed at security-provider priority 1 by
-        // TuskyApplication, which gives us a working Ed25519 KeyPairGenerator
-        // on every supported API level (min SDK 24). The encoded forms are
-        // standard RFC 8410 PKCS#8 / X.509; the last 32 bytes of each
-        // encoding are the raw seed and public key respectively.
-        val kp = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
-        val pkcs8 = kp.private.encoded
-        val spki = kp.public.encoded
-        require(pkcs8.size >= SEED_SIZE && spki.size >= PUB_SIZE) {
-            "Unexpected Ed25519 encoding lengths (pkcs8=${pkcs8.size}, spki=${spki.size})"
+        // Conscrypt 2.5.x ships an Ed25519 KeyFactory but no
+        // KeyPairGenerator, and the platform AndroidOpenSSL provider does
+        // not register Ed25519 at all on min SDK 24, so going through JCE
+        // hard-fails with NoSuchAlgorithmException on real devices. Tink's
+        // standalone Ed25519 implementation does not need a JCE provider
+        // and yields the raw 32-byte seed and public key go-libp2p expects.
+        val kp = Ed25519Sign.KeyPair.newKeyPair()
+        val seed = kp.privateKey
+        val pub = kp.publicKey
+        require(seed.size == SEED_SIZE && pub.size == PUB_SIZE) {
+            "Unexpected Ed25519 key lengths (seed=${seed.size}, pub=${pub.size})"
         }
-        val seed = pkcs8.copyOfRange(pkcs8.size - SEED_SIZE, pkcs8.size)
-        val pub = spki.copyOfRange(spki.size - PUB_SIZE, spki.size)
         return seed + pub
     }
 
