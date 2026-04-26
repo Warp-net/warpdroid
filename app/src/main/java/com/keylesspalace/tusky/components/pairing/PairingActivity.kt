@@ -210,11 +210,13 @@ class PairingActivity : AppCompatActivity() {
         scanPrompt.visibility = View.GONE
         messagePanel.visibility = View.VISIBLE
         messageTitle.text = getString(R.string.warpnet_pair_title)
-        val shortNodeId = info.nodeInfo.id.let { if (it.length > 16) "${it.take(8)}…${it.takeLast(6)}" else it }
-        val firstAddr = info.nodeInfo.addresses.firstOrNull().orEmpty()
+        val shortNodeId = info.nodeId.let { if (it.length > 16) "${it.take(8)}…${it.takeLast(6)}" else it }
+        val firstAddr = info.addresses.firstOrNull().orEmpty()
+        // The flat AuthNodeInfo no longer carries a username; show userId in
+        // the "Owner" slot of the confirmation string instead.
         messageBody.text = getString(
             R.string.warpnet_pair_confirm_body,
-            info.identity.owner.username,
+            info.userId,
             shortNodeId,
             firstAddr,
         )

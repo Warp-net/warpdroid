@@ -54,7 +54,7 @@ class PairingCoordinator @Inject constructor(
 
         val config = WarpnetConfig(
             privKeyHex = identityStore.loadOrCreateHex(),
-            pskHex = paired.identity.psk,
+            pskHex = paired.psk,
             bootstrapAddrs = bootstrap,
             desktopPeerAddr = dialable,
             network = paired.network,
