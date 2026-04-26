@@ -202,6 +202,10 @@ dependencies {
     // without Play Services.
     implementation libs.bundles.camerax
     implementation libs.mlkit.barcode.scanning
+    // Pure-Java Brotli decoder for the QR pairing payload; the fat node
+    // Brotli-compresses + Base45-encodes the full AuthNodeInfo so it fits
+    // in a QR alphanumeric segment.
+    implementation libs.brotli.dec
     // Hardware-backed EncryptedSharedPreferences for the persisted
     // Identity + pinned fat-node peer ID.
     implementation libs.androidx.security.crypto
