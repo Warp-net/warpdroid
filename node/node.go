@@ -81,7 +81,7 @@ func newClient(
 	// Build libp2p options matching thin client requirements
 	opts := []libp2p.Option{
 	    libp2p.DisableMetrics(),                  // Lightweight
-        libp2p.DisableRelay(),
+        libp2p.EnableRelay(),                     // Circuit-v2 client so /p2p-circuit bootstrap addrs are dialable
 	    libp2p.DisableIdentifyAddressDiscovery(),
 	    libp2p.NoTransports,
 	    libp2p.NoListenAddrs,                     // Client-only mode - no listening
