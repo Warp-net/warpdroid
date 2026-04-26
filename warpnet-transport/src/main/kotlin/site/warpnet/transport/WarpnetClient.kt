@@ -132,7 +132,14 @@ class WarpnetClient(
     }
 
     /**
-     * Open the pairing stream and submit [rawAuthNodeInfoJson] verbatim.
+     * Open the pairing stream and submit [rawAuthNodeInfoJson] wrapped in the
+     * standard [WarpnetEnvelope]. Every external request — pairing included
+     * — must be a `Message` envelope so the server's auth middleware
+     * (`warpnet/middleware`) can unmarshal it before dispatching to the pair
+     * handler. The body inside the envelope is the AuthNodeInfo JSON the
+     * server originally produced and the QR carried, so the pair handler's
+     * token comparison still matches byte-for-byte.
+     *
      * Expected response is exactly [ACCEPTED_RESPONSE]; anything else is
      * surfaced as a [WarpnetException.ProtocolError] so the caller can show
      * the server message to the user without persisting identity.
@@ -142,7 +149,16 @@ class WarpnetClient(
             if (_state.value !is ConnectionState.Connected) {
                 throw WarpnetException.NotConnected()
             }
-            val raw = binding.stream(ProtocolIds.PRIVATE_POST_PAIR, rawAuthNodeInfoJson)
+
+            val envelope = WarpnetEnvelope.unsigned(
+                body = rawAuthNodeInfoJson,
+                nodeId = signer.peerId,
+                path = ProtocolIds.PRIVATE_POST_PAIR,
+                timestamp = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
+            ).copy(signature = signer.sign(rawAuthNodeInfoJson))
+
+            val requestJson = envelopeAdapter.toJson(envelope)
+            val raw = binding.stream(ProtocolIds.PRIVATE_POST_PAIR, requestJson)
             val trimmed = raw.trim()
             if (trimmed == ACCEPTED_RESPONSE) return@withLock
             val parsed = runCatching { errorAdapter.fromJson(trimmed) }.getOrNull()
