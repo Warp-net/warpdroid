@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	camouflage "github.com/Warp-net/libp2p-camouflage-transport"
 	"github.com/libp2p/go-libp2p"
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/libp2p/go-libp2p/p2p/muxer/yamux"
@@ -23,7 +24,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
-	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 )
 
 type clientNode struct {
@@ -80,16 +80,16 @@ func newClient(
 	rm, _ := rcmgr.NewResourceManager(limiter)
 	// Build libp2p options matching thin client requirements
 	opts := []libp2p.Option{
-	    libp2p.DisableMetrics(),                  // Lightweight
-        libp2p.EnableRelay(),                     // Circuit-v2 client so /p2p-circuit bootstrap addrs are dialable
-	    libp2p.DisableIdentifyAddressDiscovery(),
-	    libp2p.NoTransports,
-	    libp2p.NoListenAddrs,                     // Client-only mode - no listening
+		libp2p.DisableMetrics(), // Lightweight
+		libp2p.EnableRelay(),    // Circuit-v2 client so /p2p-circuit bootstrap addrs are dialable
+		libp2p.DisableIdentifyAddressDiscovery(),
+		libp2p.NoTransports,
+		libp2p.NoListenAddrs, // Client-only mode - no listening
 		libp2p.PrivateNetwork(psk),
-		libp2p.Identity(privateKey),              // Client identity
-		libp2p.Security(noise.ID, noise.New),     // Noise protocol for encryption
-		libp2p.Transport(tcp.NewTCPTransport),    // TCP transport
-		libp2p.UserAgent("warpdroid"),            // Custom user agent
+		libp2p.Identity(privateKey),                         // Client identity
+		libp2p.Security(noise.ID, noise.New),                // Noise protocol for encryption
+		libp2p.Transport(camouflage.NewCamouflageTransport), // TCP transport
+		libp2p.UserAgent("warpdroid"),                       // Custom user agent
 		libp2p.ForceReachabilityPrivate(),
 		libp2p.Muxer(yamux.ID, yamux.DefaultTransport),
 		libp2p.ConnectionManager(connManager),
