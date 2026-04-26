@@ -16,6 +16,11 @@ import site.warpnet.transport.dto.AuthNodeInfo
  * the fat node byte-for-byte — avoiding any re-encoding drift that might
  * break the token comparison in `warpnet/core/handler/pair.go`.
  *
+ * The fat node ships the QR payload Brotli-compressed and Base45-encoded
+ * (see `warpnet/security/qrpayload.go`); [QrPayloadCodec] reverses that
+ * before the JSON parse. Plain-JSON payloads (legacy / manual paste) are
+ * passed through unchanged by the codec.
+ *
  * Hash is deliberately NOT verified here (per pairing spec).
  */
 sealed class ValidationResult {
@@ -31,8 +36,16 @@ sealed class ValidationResult {
 class AuthNodeInfoValidator(moshi: Moshi) {
     private val adapter = moshi.adapter<AuthNodeInfo>()
 
-    fun validate(rawJson: String): ValidationResult {
-        if (rawJson.isBlank()) return ValidationResult.Invalid("empty QR payload")
+    fun validate(rawPayload: String): ValidationResult {
+        if (rawPayload.isBlank()) return ValidationResult.Invalid("empty QR payload")
+        val rawJson = try {
+            QrPayloadCodec.decode(rawPayload)
+        } catch (e: IllegalArgumentException) {
+            return ValidationResult.Invalid("malformed pairing payload: ${e.message}")
+        } catch (e: java.io.IOException) {
+            return ValidationResult.Invalid("malformed pairing payload: ${e.message}")
+        }
+        if (rawJson.isBlank()) return ValidationResult.Invalid("empty pairing payload")
         val parsed = try {
             adapter.fromJson(rawJson)
         } catch (e: JsonDataException) {
