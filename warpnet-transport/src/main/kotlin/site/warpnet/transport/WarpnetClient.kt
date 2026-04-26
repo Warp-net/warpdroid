@@ -155,7 +155,7 @@ class WarpnetClient(
                 nodeId = signer.peerId,
                 path = ProtocolIds.PRIVATE_POST_PAIR,
                 timestamp = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
-            ).copy(signature = signer.sign(rawAuthNodeInfoJson))
+            )
 
             val requestJson = envelopeAdapter.toJson(envelope)
             val raw = binding.stream(ProtocolIds.PRIVATE_POST_PAIR, requestJson)

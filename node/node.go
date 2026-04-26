@@ -139,16 +139,11 @@ func newClient(
 		dht:    hashTable,
 	}
 
-	connectedCount := 0
 	for _, addr := range bootstrapNodes {
 		if err := cn.connect(addr); err != nil {
 			fmt.Printf("failed to connect to bootstrap node %s: %v\n", addr, err)
 			continue
 		}
-		connectedCount++
-	}
-	if connectedCount == 0 && len(bootstrapNodes) != 0 {
-		return nil, fmt.Errorf("failed to connect to any bootstrap nodes")
 	}
 	return cn, nil
 }
